@@ -519,7 +519,7 @@ int main(int argc, char **argv){
     float* d_x;
     float* d_w;
     CUDA_CHECK(cudaMalloc(&d_y, B * T * C * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_mean2, B * T * C * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_mean2, B * T * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_x, B * T * C * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_w, C * sizeof(float)));
     CUDA_CHECK(cudaMemcpy(d_x, x, B * T * C * sizeof(float), cudaMemcpyHostToDevice));
