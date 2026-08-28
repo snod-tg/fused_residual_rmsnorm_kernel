@@ -53,7 +53,7 @@ def plot_bandwidth(kernels, title='RMSNorm Kernel Bandwidth Comparison', save_pa
 
 if __name__ == '__main__':
     # 请根据需要修改文件名
-    filename = 'fused_residual_rmsnorm_forward.txt'   # 可改为 'rmsnorm_forward.txt'
+    filename = 'fused_residual_rmsnorm_backward.txt'   # 可改为 'rmsnorm_forward.txt'
     data = parse_benchmark(filename)
     if data:
         plot_bandwidth(data, title=f'Bandwidth Comparison ({filename})', save_path=f'{filename}.png')
