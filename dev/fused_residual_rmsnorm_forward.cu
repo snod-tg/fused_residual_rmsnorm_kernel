@@ -77,7 +77,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel1(
 
     float m2 = sum / C;
     mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = 0; c < C; ++c){
         yr[c] = zr[c] * w[c] * inv;
@@ -120,7 +120,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel2(
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
 
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane; c < C; c+= 32){
         yr[c] = zr[c] * w[c] * inv;
@@ -154,9 +154,11 @@ __global__ void fused_residual_rmsnorm_forward_kernel3(
     for(int c = lane * 2; c < C; c+=32 * 2){
         float2 xv = *reinterpret_cast<const float2*>(xr + c);
         float2 residualv = *reinterpret_cast<const float2*>(residualr + c);
-        zr[c] = xv.x + residualv.x;
-        zr[c + 1] = xv.y + residualv.y;
-        sum += zr[c] * zr[c] + zr[c + 1] * zr[c + 1];
+        float2 value;
+        value.x = xv.x + residualv.x;
+        value.y = xv.y + residualv.y;
+        *reinterpret_cast<float2*>(rz + c) = value;
+        sum += value.x * value.x + value.y * value.y;
     }
 
     for(int off = 16; off > 0; off >>= 1)
@@ -165,7 +167,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel3(
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane * 2; c < C; c+= 32 * 2){
         float2 zv = *reinterpret_cast<const float2*>(zr + c);
@@ -204,14 +206,16 @@ __global__ void fused_residual_rmsnorm_forward_kernel4(
     for(int c = lane * 4; c < C; c+=32 * 4){
         float4 xv = *reinterpret_cast<const float4*>(xr + c);
         float4 residualv = *reinterpret_cast<const float4*>(residualr + c);
-        zr[c] = xv.x + residualv.x;
-        zr[c + 1] = xv.y + residualv.y;
-        zr[c + 2] = xv.z + residualv.z;
-        zr[c + 3] = xv.w + residualv.w;
-        sum += zr[c] * zr[c] + 
-                zr[c + 1] * zr[c + 1] + 
-                zr[c + 2] * zr[c + 2] + 
-                zr[c + 3] * zr[c + 3];
+        float4 value;
+        value.x = xv.x + residualv.x;
+        value.y = xv.y + residualv.y;
+        value.z = xv.z + residualv.z;
+        value.w = xv.w + residualv.w;
+        *reinterpret_cast<float4*><zr + c> = value;
+        sum += value.x * value.x + 
+               value.y * value.y + 
+               value.z * value.z + 
+               value.w * value.w;
     }
 
     for(int off = 16; off > 0; off >>= 1)
@@ -220,7 +224,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel4(
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane * 4; c < C; c+= 32 * 4){
         float4 zv = *reinterpret_cast<const float4*>(zr + c);
@@ -279,7 +283,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel5(
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
 
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane; c < C; c+= 32){
         yr[c] = zr[c] * shared_w[c] * inv;
@@ -501,25 +505,24 @@ void fused_residual_rmsnorm_forward6(
     int block_size
 ){
     const int N = B * T;
-    if (block_size % 32 != 0) { /* 要求 block_size 是 32 的倍数 */ }
-    int grid_size = -1;
     // 如果使用 grid-stride，grid_size 通常固定
-    if (grid_size <= 0) {
-        // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
-        int device;
-        cudaGetDevice(&device);
-        int sm_count;
-        cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device);
-        int max_blocks_per_sm;
-        cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &max_blocks_per_sm, fused_residual_rmsnorm_forward_kernel6, block_size, C * sizeof(float));
-        grid_size = sm_count * max_blocks_per_sm;
-        // 限制 grid_size 不超过 ceil(N / (block_size/32))，因为每个 warp 处理一行
-        int max_needed = (N + (block_size/32) - 1) / (block_size/32);
-        grid_size = std::min(grid_size, max_needed);
-    }
+    // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
+    int device;
+    cudaGetDevice(&device);
+    int sm_count;
+    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device);
+    int max_blocks_per_sm;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &max_blocks_per_sm, fused_residual_rmsnorm_forward_kernel6, block_size, C * sizeof(float));
+    int grid_size = sm_count * max_blocks_per_sm;
+    // 限制 grid_size 不超过 ceil(N / (block_size/32))，因为每个 warp 处理一行
+    int max_needed = (N + (block_size/32) - 1) / (block_size/32);
+    grid_size = std::min(grid_size, max_needed);
 
     size_t smem_size = C * sizeof(float);   // 缓存权重 w
+    CUDA_CHECK(cudaFuncSetAttribute(fused_residual_rmsnorm_forward_kernel6,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize,
+                         smem_size));
     fused_residual_rmsnorm_forward_kernel6<<<grid_size, block_size, smem_size>>>(
         y, z, mean2, x, residual, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -578,6 +581,7 @@ int main(int argc, char **argv){
     float* y = (float*)malloc(B * T * C * sizeof(float));
     float* z = (float*)malloc(B * T * C * sizeof(float));
     float* mean2 = (float*)malloc(B * T * sizeof(float));
+    
     float* x = make_random_float(B * T * C);
     float* residual = make_random_float(B * T * C);
     float* w = make_random_float(C);
@@ -631,7 +635,7 @@ int main(int argc, char **argv){
         float elapsed_time = benchmark_kernel(repeat_times, fused_residual_rmsnorm_forward, 
                                             kernel_num, d_y, d_z, d_mean2, 
                                             d_x, d_residual, d_w, B, T, C, block_size);
-        long memory_ops = (2 * B * T * C) * 4;
+        long memory_ops = (4 * B * T * C + C + B * T) * 4;
         float memory_bandwidth = memory_ops / elapsed_time / 1e6;
 
         printf("block_size %4d | time %.4f ms | bandwidth %.2f GB/s\n", block_size, elapsed_time, memory_bandwidth);

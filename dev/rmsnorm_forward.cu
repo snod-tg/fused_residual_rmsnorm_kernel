@@ -63,7 +63,7 @@ __global__ void rmsnorm_forward_kernel1(
 
     float m2 = sum / C;
     mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = 0; c < C; ++c){
         yr[c] = xr[c] * w[c] * inv;
@@ -102,7 +102,7 @@ __global__ void rmsnorm_forward_kernel2(
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
 
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane; c < C; c+= 32){
         yr[c] = xr[c] * w[c] * inv;
@@ -140,7 +140,7 @@ __global__ void rmsnorm_forward_kernel3(
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane * 2; c < C; c+= 32 * 2){
         float2 xv = *reinterpret_cast<const float2*>(xr + c);
@@ -183,7 +183,7 @@ __global__ void rmsnorm_forward_kernel4(
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane * 4; c < C; c+= 32 * 4){
         float4 xv = *reinterpret_cast<const float4*>(xr + c);
@@ -238,7 +238,7 @@ __global__ void rmsnorm_forward_kernel5(
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
 
-    float inv = rsqrt(m2 + kEps);
+    float inv = rsqrtf(m2 + kEps);
 
     for(int c = lane; c < C; c+= 32){
         yr[c] = xr[c] * shared_w[c] * inv;
@@ -417,9 +417,9 @@ void rmsnorm_forward5(
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
     // 检查共享内存是否超限（可选）
-    cudaFuncSetAttribute(rmsnorm_forward_kernel5,
+    CUDA_CHECK(cudaFuncSetAttribute(rmsnorm_forward_kernel5,
                          cudaFuncAttributeMaxDynamicSharedMemorySize,
-                         smem_size);
+                         smem_size));
     rmsnorm_forward_kernel5<<<grid_size, block_size, smem_size>>>(y, mean2, x, w, N, C);
     CUDA_CHECK(cudaGetLastError());
 
@@ -436,25 +436,24 @@ void rmsnorm_forward6(
     int block_size
 ){
     const int N = B * T;
-    if (block_size % 32 != 0) { /* 要求 block_size 是 32 的倍数 */ }
-    int grid_size = -1;
     // 如果使用 grid-stride，grid_size 通常固定
-    if (grid_size <= 0) {
-        // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
-        int device;
-        cudaGetDevice(&device);
-        int sm_count;
-        cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device);
-        int max_blocks_per_sm;
-        cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &max_blocks_per_sm, rmsnorm_forward_kernel6, block_size, C * sizeof(float));
-        grid_size = sm_count * max_blocks_per_sm;
-        // 限制 grid_size 不超过 ceil(N / (block_size/32))，因为每个 warp 处理一行
-        int max_needed = (N + (block_size/32) - 1) / (block_size/32);
-        grid_size = std::min(grid_size, max_needed);
-    }
+    // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
+    int device;
+    cudaGetDevice(&device);
+    int sm_count;
+    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device);
+    int max_blocks_per_sm;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &max_blocks_per_sm, rmsnorm_forward_kernel6, block_size, C * sizeof(float));
+    int grid_size = sm_count * max_blocks_per_sm;
+    // 限制 grid_size 不超过 ceil(N / (block_size/32))，因为每个 warp 处理一行
+    int max_needed = (N + (block_size/32) - 1) / (block_size/32);
+    grid_size = std::min(grid_size, max_needed);
 
     size_t smem_size = C * sizeof(float);   // 缓存权重 w
+    CUDA_CHECK(cudaFuncSetAttribute(rmsnorm_forward_kernel6,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize,
+                         smem_size));
     rmsnorm_forward_kernel6<<<grid_size, block_size, smem_size>>>(
         y, mean2, x, w, N, C);
     CUDA_CHECK(cudaGetLastError());
