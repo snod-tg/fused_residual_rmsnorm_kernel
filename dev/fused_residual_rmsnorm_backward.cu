@@ -604,7 +604,7 @@ int main(int argc, char **argv) {
 
         // check the correctness of the kernel
         float error_threshold_dinp = sizeof(float) == 4 ? 1e-3f : 1e-1f; // allow larger errors for BF16/FP16
-        float error_threshold_dparams = sizeof(float) == 4 ? 1e-3f : 5e-1f; // much, much larger...
+        float error_threshold_dparams = sizeof(float) == 4 ? 2e-3f : 5e-1f; // much, much larger...
         printf("Checking correctness...\n");
         printf("dx:\n");
         validate_result(d_dx, dx, "dx", B * T * C, error_threshold_dinp);

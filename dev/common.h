@@ -4,7 +4,20 @@
 #include <cublas_v2.h>
 #include <cublasLt.h>
 #include <float.h>
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+#include <cmath>
+#include <cstddef>
 
+// ---- 1. 类型转换：存储类型 <-> float ----
+// as_float/from_float 都标 __host__，因为 CPU 参考也要用它转换 half/bf16。
+template <typename T> __host__ __device__ float as_float(T v){return (float)v;}
+template <> __host__ __device__ float as_float<half>(half v){return __half2float(v);}
+template <> __host__ __device__ float as_float<__nv_bfloat16>(__nv_bfloat16 v){return __bfloat162float(v);}
+
+template <typename T> __host__ __device__ T from_float(float v){return (T)v;}
+template <> __host__ __device__ half from_float<half>(float v){return __float2half_rn(v);}
+template <> __host__ __device__ half from_float<__nv_bfloat16>(float v){return __float2bfloat16_rn(v);}
 
 template<class T>
 __host__ __device__ T ceil_div(T dividend, T divisor) {
