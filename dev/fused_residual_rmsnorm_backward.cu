@@ -4,7 +4,7 @@ nvcc -O3 --use_fast_math -lcublas -lcublasLt fused_residual_rmsnorm_backward.cu 
 nvcc -O3 -std=c++17 -arch=sm_86 --use_fast_math fused_residual_rmsnorm_backward.cu -o fused_residual_rmsnorm_backward
 
 version 1 is naive port from CPU code to kernel: parallelizes over B,T, loops over C
-./rmsnorm_backward 1
+./fused_residual_rmsnorm_backward 1
 
 */
 
@@ -111,17 +111,16 @@ void fused_residual_rmsnorm_backward_cpu(
     }
 }
 
-// 混合精度反向 CPU 参考：dx=dresidual=round(dnorm+dz)，dw 用 double 累加
+// 混合精度反向 CPU 参考：dx=dresidual=round(dnorm)，dw 用 double 累加
 template <typename T>
 void fused_residual_rmsnorm_backward_cpu(
-    T* dx, T* dresidual, float* dw, const T* dy, const T* dz,
+    T* dx, T* dresidual, float* dw, const T* dy,
     const T* z, const T* weight, const float* mean2, int N, int C
 ){
     std::vector<double> dw_acc(C, 0.0);
     for(int row = 0; row < N; ++row){
         const T* zr = z + (size_t)row * C;
         const T* dyr = dy + (size_t)row * C;
-        const T* dzr = dz + (size_t)row * C;
         T* dxr = dx + (size_t)row * C;
         T* dresidualr = dresidual + (size_t)row * C;
 
@@ -135,7 +134,6 @@ void fused_residual_rmsnorm_backward_cpu(
             float grad = as_float(dyr[c]);
             float value = as_float(zr[c]);
             float result = (grad * as_float(weight[c]) - value * (float)correction) * inv;
-            result += as_float(dzr[c]);
             dxr[c] = from_float<T>(result);
             dresidualr[c] = from_float<T>(result);
             dw_acc[c] += (double)grad * value * inv;
@@ -415,7 +413,7 @@ template <> struct vec2_of<__nv_bfloat16> { using type = __nv_bfloat162; };
 // 混合精度：block 内共享内存聚合（对标 FP32 kernel3）
 template <typename T>
 __global__ void fused_residual_rmsnorm_backward_kernel6(
-    T* dx, T* dresidual, float* dw, const T* dy, const T* dz,
+    T* dx, T* dresidual, float* dw, const T* dy,
     const T* z, const T* weight, const float* mean2, int N, int C
 ){
     extern __shared__ float shared_dw[];
@@ -429,7 +427,6 @@ __global__ void fused_residual_rmsnorm_backward_kernel6(
     if(row < N){
         const T* zr = z + (size_t)row * C;
         const T* dyr = dy + (size_t)row * C;
-        const T* dzr = dz + (size_t)row * C;
         T* dxr = dx + (size_t)row * C;
         T* dresidualr = dresidual + (size_t)row * C;
 
@@ -447,7 +444,6 @@ __global__ void fused_residual_rmsnorm_backward_kernel6(
             float grad = as_float(dyr[c]);
             float value = as_float(zr[c]);
             float result = (grad * as_float(weight[c]) - value * correction) * inv;
-            result += as_float(dzr[c]);
             T out = from_float<T>(result);
             dxr[c] = out;
             dresidualr[c] = out;
@@ -462,7 +458,7 @@ __global__ void fused_residual_rmsnorm_backward_kernel6(
 // 混合精度：persistent + vec2（对标 FP32 kernel5）
 template <typename T>
 __global__ void fused_residual_rmsnorm_backward_kernel7(
-    T* dx, T* dresidual, float* dw, const T* dy, const T* dz,
+    T* dx, T* dresidual, float* dw, const T* dy,
     const T* z, const T* w, const float* mean2, int N, int C
 ){
     extern __shared__ float shared_dw[];
@@ -478,7 +474,6 @@ __global__ void fused_residual_rmsnorm_backward_kernel7(
     for (long row = first_row; row < N; row += row_stride) {
         const T* zr = z + (size_t)row * C;
         const T* dyr = dy + (size_t)row * C;
-        const T* dzr = dz + (size_t)row * C;
         T* dxr = dx + (size_t)row * C;
         T* dresidualr = dresidual + (size_t)row * C;
 
@@ -500,12 +495,11 @@ __global__ void fused_residual_rmsnorm_backward_kernel7(
             const V2 dyr2 = *reinterpret_cast<const V2*>(dyr + c);
             const V2 zr2 = *reinterpret_cast<const V2*>(zr + c);
             const V2 w2 = *reinterpret_cast<const V2*>(w + c);
-            const V2 dz2 = *reinterpret_cast<const V2*>(dzr + c);
             V2 tmp;
             tmp.x = from_float<T>(as_float(dyr2.x) * as_float(w2.x) * inv
-                                 - as_float(zr2.x) * inv * correction + as_float(dz2.x));
+                                 - as_float(zr2.x) * inv * correction);
             tmp.y = from_float<T>(as_float(dyr2.y) * as_float(w2.y) * inv
-                                 - as_float(zr2.y) * inv * correction + as_float(dz2.y));
+                                 - as_float(zr2.y) * inv * correction);
             *reinterpret_cast<V2*>(dxr + c) = tmp;
             *reinterpret_cast<V2*>(dresidualr + c) = tmp;
             atomicAdd(&shared_dw[c],     as_float(dyr2.x) * as_float(zr2.x) * inv);
@@ -529,11 +523,11 @@ void fused_residual_rmsnorm_backward1(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N, block_size);
     fused_residual_rmsnorm_backward_kernel1<<<grid_size, block_size>>>(dx, dresidual, dw, dy, z, w, mean2, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -548,12 +542,12 @@ void fused_residual_rmsnorm_backward2(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     fused_residual_rmsnorm_backward_kernel2<<<grid_size, block_size>>>(dx, dresidual, dw, dy, z, w, mean2, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -568,12 +562,12 @@ void fused_residual_rmsnorm_backward3(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
@@ -593,12 +587,12 @@ void fused_residual_rmsnorm_backward4(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(fused_residual_rmsnorm_backward_kernel4,
@@ -630,12 +624,12 @@ void fused_residual_rmsnorm_backward5(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     // const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
@@ -669,28 +663,28 @@ void fused_residual_rmsnorm_backward5(
 // 混合精度 launcher：kernel6 = warp + shared 聚合
 template <typename T>
 void fused_residual_rmsnorm_backward6(
-    T* dx, T* dresidual, float* dw, const T* dy, const T* dz,
-    const T* z, const T* w, const float* mean2, int B, int T, int C, const int block_size
+    T* dx, T* dresidual, float* dw, const T* dy,
+    const T* z, const T* w, const float* mean2, int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(fused_residual_rmsnorm_backward_kernel6<T>,
                          cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
     fused_residual_rmsnorm_backward_kernel6<T><<<grid_size, block_size, smem_size>>>(
-        dx, dresidual, dw, dy, dz, z, w, mean2, N, C);
+        dx, dresidual, dw, dy, z, w, mean2, N, C);
     CUDA_CHECK(cudaGetLastError());
 }
 
 // 混合精度 launcher：kernel7 = persistent + vec2
 template <typename T>
 void fused_residual_rmsnorm_backward7(
-    T* dx, T* dresidual, float* dw, const T* dy, const T* dz,
-    const T* z, const T* w, const float* mean2, int B, int T, int C, const int block_size
+    T* dx, T* dresidual, float* dw, const T* dy,
+    const T* z, const T* w, const float* mean2, int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(fused_residual_rmsnorm_backward_kernel7<T>,
                          cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
@@ -708,14 +702,14 @@ void fused_residual_rmsnorm_backward7(
 
     bool use_vec2 = (C % 2 == 0) &&
                     is_aligned(z, 2 * sizeof(T)) && is_aligned(w, 2 * sizeof(T)) &&
-                    is_aligned(dy, 2 * sizeof(T)) && is_aligned(dz, 2 * sizeof(T)) &&
+                    is_aligned(dy, 2 * sizeof(T)) &&
                     is_aligned(dx, 2 * sizeof(T)) && is_aligned(dresidual, 2 * sizeof(T));
     if (use_vec2) {
         fused_residual_rmsnorm_backward_kernel7<T><<<grid_size, block_size, smem_size>>>(
-            dx, dresidual, dw, dy, dz, z, w, mean2, N, C);
+            dx, dresidual, dw, dy, z, w, mean2, N, C);
     } else {
         fused_residual_rmsnorm_backward_kernel6<T><<<grid_size, block_size, smem_size>>>(
-            dx, dresidual, dw, dy, dz, z, w, mean2, N, C);
+            dx, dresidual, dw, dy, z, w, mean2, N, C);
     }
     CUDA_CHECK(cudaGetLastError());
 }
@@ -727,32 +721,31 @@ void fused_residual_rmsnorm_backward(
     T* dresidual, 
     float* dw, 
     const T* dy, 
-    const T* dz, 
     const T* z, 
     const T* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     if constexpr (std::is_same_v<T, float>) {
         switch(kernel_num){
-            case 1: fused_residual_rmsnorm_backward1(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 2: fused_residual_rmsnorm_backward2(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 3: fused_residual_rmsnorm_backward3(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 4: fused_residual_rmsnorm_backward4(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 5: fused_residual_rmsnorm_backward5(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 6: fused_residual_rmsnorm_backward6<T>(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 7: fused_residual_rmsnorm_backward7<T>(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
+            case 1: fused_residual_rmsnorm_backward1(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 2: fused_residual_rmsnorm_backward2(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 3: fused_residual_rmsnorm_backward3(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 4: fused_residual_rmsnorm_backward4(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 5: fused_residual_rmsnorm_backward5(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 6: fused_residual_rmsnorm_backward6<T>(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 7: fused_residual_rmsnorm_backward7<T>(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
         }
     } else {
         switch(kernel_num){
-            case 6: fused_residual_rmsnorm_backward6<T>(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
-            case 7: fused_residual_rmsnorm_backward7<T>(dx, dresidual, dw, dy, dz, z, w, mean2, B, T, C, block_size); break;
+            case 6: fused_residual_rmsnorm_backward6<T>(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
+            case 7: fused_residual_rmsnorm_backward7<T>(dx, dresidual, dw, dy, z, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);
@@ -767,13 +760,12 @@ int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
     const int N = B * T_tokens;
 
     // 1) 生成 T 类型的输入
-    std::vector<T> h_x(N * C), h_residual(N * C), h_w(C), h_dy(N * C), h_dz(N * C);
+    std::vector<T> h_x(N * C), h_residual(N * C), h_w(C), h_dy(N * C);
     srand(0);
     for (int i = 0; i < N * C; ++i) {
         h_x[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
         h_residual[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
         h_dy[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
-        h_dz[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
     }
     for (int i = 0; i < C; ++i) h_w[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
 
@@ -786,22 +778,20 @@ int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
     std::vector<T> h_dx(N * C), h_dresidual(N * C);
     std::vector<float> h_dw(C);
     fused_residual_rmsnorm_backward_cpu<T>(h_dx.data(), h_dresidual.data(), h_dw.data(),
-                                           h_dy.data(), h_dz.data(), h_z.data(), h_w.data(),
+                                           h_dy.data(), h_z.data(), h_w.data(),
                                            h_mean2.data(), N, C);
 
     // 3) 设备内存
-    T *d_dx, *d_dresidual, *d_dy, *d_dz, *d_z, *d_w;
+    T *d_dx, *d_dresidual, *d_dy, *d_z, *d_w;
     float *d_dw, *d_mean2;
     CUDA_CHECK(cudaMalloc(&d_dx, N * C * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&d_dresidual, N * C * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&d_dy, N * C * sizeof(T)));
-    CUDA_CHECK(cudaMalloc(&d_dz, N * C * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&d_z, N * C * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&d_w, C * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&d_dw, C * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_mean2, N * sizeof(float)));
     CUDA_CHECK(cudaMemcpy(d_dy, h_dy.data(), N * C * sizeof(T), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_dz, h_dz.data(), N * C * sizeof(T), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_z, h_z.data(), N * C * sizeof(T), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_w, h_w.data(), C * sizeof(T), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_mean2, h_mean2.data(), N * sizeof(float), cudaMemcpyHostToDevice));
@@ -815,7 +805,7 @@ int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
         CUDA_CHECK(cudaMemset(d_dresidual, 0, N * C * sizeof(T)));
         CUDA_CHECK(cudaMemset(d_dw, 0, C * sizeof(float)));
         fused_residual_rmsnorm_backward<T>(kernel_num, d_dx, d_dresidual, d_dw,
-                                           d_dy, d_dz, d_z, d_w, d_mean2,
+                                           d_dy, d_z, d_w, d_mean2,
                                            B, T_tokens, C, block_size);
         CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -851,7 +841,7 @@ int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
         int block_size = block_sizes[j];
         CUDA_CHECK(cudaMemset(d_dw, 0, C * sizeof(float)));
         float elapsed_time = benchmark_kernel(100, fused_residual_rmsnorm_backward<T>, kernel_num,
-                                              d_dx, d_dresidual, d_dw, d_dy, d_dz, d_z, d_w, d_mean2,
+                                              d_dx, d_dresidual, d_dw, d_dy, d_z, d_w, d_mean2,
                                               B, T_tokens, C, block_size);
         long memory_ops = (5L * N * C) * sizeof(T) + (long)C * sizeof(T) + (long)N * 4 + (long)C * 4;
         float memory_bandwidth = memory_ops / elapsed_time / 1e6;
@@ -862,7 +852,6 @@ int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
     CUDA_CHECK(cudaFree(d_dx));
     CUDA_CHECK(cudaFree(d_dresidual));
     CUDA_CHECK(cudaFree(d_dy));
-    CUDA_CHECK(cudaFree(d_dz));
     CUDA_CHECK(cudaFree(d_z));
     CUDA_CHECK(cudaFree(d_w));
     CUDA_CHECK(cudaFree(d_dw));

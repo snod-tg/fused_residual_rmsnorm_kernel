@@ -429,11 +429,11 @@ void rmsnorm_forward1(
     const float* x,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N, block_size);
     rmsnorm_forward_kernel1<<<grid_size, block_size>>>(y, mean2, x, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -446,12 +446,12 @@ void rmsnorm_forward2(
     const float* x,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     rmsnorm_forward_kernel2<<<grid_size, block_size>>>(y, mean2, x, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -464,12 +464,12 @@ void rmsnorm_forward3(
     const float* x,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
 
     bool use_vec2 = (C % 2 == 0) &&
@@ -491,12 +491,12 @@ void rmsnorm_forward4(
     const float* x,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
 
     // 检查是否满足 float4 向量化条件
@@ -518,12 +518,12 @@ void rmsnorm_forward5(
     const float* x,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
     // 检查共享内存是否超限（可选）
@@ -541,11 +541,11 @@ void rmsnorm_forward6(
     const float* x, 
     const float* w,
     int B, 
-    int T, 
+    int T1, 
     int C,
     int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     // 如果使用 grid-stride，grid_size 通常固定
     // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
     int device;

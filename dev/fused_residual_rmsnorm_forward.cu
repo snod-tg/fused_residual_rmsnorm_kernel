@@ -484,11 +484,11 @@ void fused_residual_rmsnorm_forward1(
     const float* residual,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N, block_size);
     fused_residual_rmsnorm_forward_kernel1<<<grid_size, block_size>>>(y, z, mean2, x, residual, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -502,12 +502,12 @@ void fused_residual_rmsnorm_forward2(
     const float* residual,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     fused_residual_rmsnorm_forward_kernel2<<<grid_size, block_size>>>(y, z, mean2, x, residual, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -522,12 +522,12 @@ void fused_residual_rmsnorm_forward3(
     const float* residual,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
 
     bool use_vec2 = (C % 2 == 0) &&
@@ -551,12 +551,12 @@ void fused_residual_rmsnorm_forward4(
     const float* residual,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
 
     // 检查是否满足 float4 向量化条件
@@ -581,12 +581,12 @@ void fused_residual_rmsnorm_forward5(
     const float* residual,
     const float* w,
     int B,
-    int T, 
+    int T1, 
     int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
     // 检查共享内存是否超限（可选）
@@ -606,11 +606,11 @@ void fused_residual_rmsnorm_forward6(
     const float* residual,
     const float* w,
     int B, 
-    int T, 
+    int T1, 
     int C,
     int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     // 如果使用 grid-stride，grid_size 通常固定
     // 自动计算：让每个 SM 尽可能多驻留 block，但不超过 row 数
     int device;
@@ -638,10 +638,10 @@ void fused_residual_rmsnorm_forward6(
 template <typename T>
 void fused_residual_rmsnorm_forward7(
     T* y, T* z, float* mean2, const T* x, const T* residual, const T* w,
-    int B, int T, int C, const int block_size
+    int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     fused_residual_rmsnorm_forward_kernel7<T><<<grid_size, block_size>>>(y, z, mean2, x, residual, w, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -651,10 +651,10 @@ void fused_residual_rmsnorm_forward7(
 template <typename T>
 void fused_residual_rmsnorm_forward8(
     T* y, T* z, float* mean2, const T* x, const T* residual, const T* w,
-    int B, int T, int C, const int block_size
+    int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     bool use_vec2 = (C % 2 == 0) &&
                     is_aligned(x, 2 * sizeof(T)) && is_aligned(residual, 2 * sizeof(T)) &&
@@ -678,28 +678,28 @@ void fused_residual_rmsnorm_forward(
     const T* residual,
     const T* w,
     int B,
-    int T,
+    int T1,
     int C,
     const int block_size
 ){
     if constexpr (std::is_same_v<T, float>) {
         switch(kernel_num){
-            case 1: fused_residual_rmsnorm_forward1(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 2: fused_residual_rmsnorm_forward2(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 3: fused_residual_rmsnorm_forward3(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 4: fused_residual_rmsnorm_forward4(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 5: fused_residual_rmsnorm_forward5(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 6: fused_residual_rmsnorm_forward6(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T, C, block_size); break;
+            case 1: fused_residual_rmsnorm_forward1(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 2: fused_residual_rmsnorm_forward2(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 3: fused_residual_rmsnorm_forward3(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 4: fused_residual_rmsnorm_forward4(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 5: fused_residual_rmsnorm_forward5(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 6: fused_residual_rmsnorm_forward6(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
         }
     } else {
         switch(kernel_num){
-            case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T, C, block_size); break;
-            case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T, C, block_size); break;
+            case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);

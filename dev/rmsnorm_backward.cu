@@ -490,11 +490,11 @@ void rmsnorm_backward1(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N, block_size);
     rmsnorm_backward_kernel1<<<grid_size, block_size>>>(dx, dw, dy, x, w, mean2, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -508,12 +508,12 @@ void rmsnorm_backward2(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     rmsnorm_backward_kernel2<<<grid_size, block_size>>>(dx, dw, dy, x, w, mean2, N, C);
     CUDA_CHECK(cudaGetLastError());
@@ -527,12 +527,12 @@ void rmsnorm_backward3(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
@@ -551,12 +551,12 @@ void rmsnorm_backward4(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(rmsnorm_backward_kernel4,
@@ -587,12 +587,12 @@ void rmsnorm_backward5(
     const float* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
 
     // const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
@@ -626,10 +626,10 @@ void rmsnorm_backward5(
 template <typename T>
 void rmsnorm_backward6(
     T* dx, float* dw, const T* dy, const T* x, const T* w, const float* mean2,
-    int B, int T, int C, const int block_size
+    int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     const int grid_size = ceil_div(N * 32, block_size);
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(rmsnorm_backward_kernel6<T>,
@@ -642,10 +642,10 @@ void rmsnorm_backward6(
 template <typename T>
 void rmsnorm_backward7(
     T* dx, float* dw, const T* dy, const T* x, const T* w, const float* mean2,
-    int B, int T, int C, const int block_size
+    int B, int T1, int C, const int block_size
 ){
     assert(block_size % 32 == 0);
-    const int N = B * T;
+    const int N = B * T1;
     size_t smem_size = C * sizeof(float);
     cudaFuncSetAttribute(rmsnorm_backward_kernel7<T>,
                          cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
@@ -682,27 +682,27 @@ void rmsnorm_backward(
     const T* w, 
     const float* mean2, 
     int B, 
-    int T, 
+    int T1, 
     int C, 
     const int block_size
 ){
     if constexpr (std::is_same_v<T, float>) {
         switch(kernel_num){
-            case 1: rmsnorm_backward1(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 2: rmsnorm_backward2(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 3: rmsnorm_backward3(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 4: rmsnorm_backward4(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 5: rmsnorm_backward5(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
+            case 1: rmsnorm_backward1(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 2: rmsnorm_backward2(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 3: rmsnorm_backward3(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 4: rmsnorm_backward4(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 5: rmsnorm_backward5(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
         }
     } else {
         switch(kernel_num){
-            case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
-            case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T, C, block_size); break;
+            case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);

@@ -44,8 +44,9 @@ dx   = (dy*w - x*dot*inv^2/C) * inv
 dw   = sum_rows(dy * x * inv)        # 跨所有行累加
 ```
 
-融合算子多一步：`z = round(x + residual)`，反向多一条 `dz` 支路
-`dx = dresidual = round(dnorm + dz)`。详见 [教程第 1 章](tutorial/tutorial/01-math.md)。
+融合算子多一步：`z = round(x + residual)`。本项目中 `z` 只作为 rmsnorm 的输入、不参与
+后续计算，所以反向没有 `dz` 支路：`dx = dresidual = round(dnorm)`，其中
+`dnorm = (dy*w - z*dot*inv^2/C)*inv`。详见 [教程第 1 章](tutorial/tutorial/01-math.md)。
 
 ### 2. CPU 参考实现
 
@@ -58,7 +59,7 @@ dw   = sum_rows(dy * x * inv)        # 跨所有行累加
 |---|---|---|
 | RMSNorm | 前向 | 1 线程一行 → 2 warp 归约 → 3 vec2 → 4 vec4 → 5 共享内存缓存 w → 6 grid-stride+__ldg → 7 混合精度标量 → 8 混合精度 vec2 |
 | RMSNorm | 反向 | 1 全局原子 → 2 warp 归约 → 3 block 共享聚合 → 4 persistent → 5 persistent+vec2 → 6 混合精度 shared → 7 混合精度 persistent+vec2 |
-| Fused Residual RMSNorm | 前向/反向 | 同构，前向多残差相加与 z 写回，反向多 dz 支路 |
+| Fused Residual RMSNorm | 前向/反向 | 同构，前向多残差相加与 z 写回；反向无 dz 支路（z 只做中间量） |
 
 核心结论（实测）：
 
