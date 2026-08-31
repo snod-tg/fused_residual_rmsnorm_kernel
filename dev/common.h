@@ -17,7 +17,7 @@ template <> __host__ __device__ float as_float<__nv_bfloat16>(__nv_bfloat16 v){r
 
 template <typename T> __host__ __device__ T from_float(float v){return (T)v;}
 template <> __host__ __device__ half from_float<half>(float v){return __float2half_rn(v);}
-template <> __host__ __device__ half from_float<__nv_bfloat16>(float v){return __float2bfloat16_rn(v);}
+template <> __host__ __device__ __nv_bfloat16 from_float<__nv_bfloat16>(float v){return __float2bfloat16_rn(v);}
 
 template<class T>
 __host__ __device__ T ceil_div(T dividend, T divisor) {

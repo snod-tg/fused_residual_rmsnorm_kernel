@@ -14,6 +14,8 @@ version 1 is naive port from CPU code to kernel: parallelizes over B,T, loops ov
 #include <cstddef>
 #include <cstdlib>
 #include <cstdio>
+#include <type_traits>
+#include <vector>
 #include <assert.h>
 
 #include "common.h"
@@ -37,6 +39,34 @@ void rmsnorm_forward_cpu(
         mean2[row] = m2;
         float inv = 1.0f / std::sqrt(m2 + kEps);
         for(int c= 0; c < C; ++c) yr[c] = xr[c] * w[c] * inv;
+    }
+}
+
+// CPU 参考（double 归约，更接近真值)
+template <typename T>
+void rmsnorm_forward_cpu(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int N, 
+    int C 
+){
+    for(int row = 0; row < N; ++row){
+        const T* xr = x + (size_t)row * C;
+        T* yr = y + (size_t)row * C;
+        double sum = 0.0;       // 参开用double，更接近真值
+        for (int c = 0; c < C; ++c){
+            double v = as_float(xr[c]);
+            sum += v * v;
+        }
+
+        float m2 = (float)(sum / C);
+        mean2[row] = m2;
+        float inv = (float)(1.0 / std::sqrt((double)m2 + kEps));
+        for (int c = 0; c < C; ++c){
+            yr[c] = from_float<T>(as_float(xr[c]) * as_float(w[c]) * inv);
+        }
     }
 }
 
@@ -309,7 +339,87 @@ __global__ void rmsnorm_forward_kernel6(
     }
 }
 
+// warp 归约版 RMSNorm 前向（模板，标量 load）
+template <typename T>
+__global__ void rmsnorm_forward_kernel7(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int N,
+    int C
+){
+    int lane = threadIdx.x % 32;
+    int warp_id = threadIdx.x / 32;
+    int row = blockIdx.x * (blockDim.x / 32) + warp_id;
+    if(row >= N) return;
 
+    const T* xr = x + (size_t)row * C;
+    T* yr = y + (size_t)row * C;
+
+    float sum = 0.0f;
+    for(int c = lane; c < C; c+= 32){
+        float v = as_float(xr[c]);
+        sum += v * v;
+    }
+    for(int off = 16; off > 0; off >>= 1)
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+
+    float m2 = sum / C;
+    float inv = rsqrtf(m2 + kEps);
+    if (lane == 0) mean2[row] = m2;
+
+    for(int c = lane; c < C; c+= 32){
+        yr[c] = from_float<T>(as_float(xr[c]) * as_float(w[c]) * inv); // 算完转回低精度写回
+    }
+}
+
+// vec2 向量化版本：一次搬 2 个元素（float2 / half2 / __nv_bfloat162）
+template <typename T> struct vec2_of;
+template <> struct vec2_of<float> { using type = float2; };
+template <> struct vec2_of<half> {using type = half2; };
+template <> struct vec2_of<__nv_bfloat16> {using type = __nv_bfloat162; };
+
+template <typename T>
+__global__ void rmsnorm_forward_kernel8(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int N,
+    int C
+){
+    using V2 = typename vec2_of<T>::type;
+    int lane = threadIdx.x % 32;
+    int warp_id = threadIdx.x / 32;
+    int row = blockIdx.x * (blockDim.x / 32) + warp_id;
+    if(row >= N) return;
+
+    const T* xr = x + (size_t)row * C;
+    T* yr = y + (size_t)row * C;
+
+    float sum = 0.0f;
+    for (int c = lane * 2; c < C; c += 32 * 2){
+        V2 v = *reinterpret_cast<const V2*>(xr + c);
+        sum += as_float(v.x) * as_float(v.x) + as_float(v.y) * as_float(v.y);
+    }
+    for(int off = 16; off > 0; off >>= 1){
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+    }
+
+    float m2 = sum / C;
+    float inv = rsqrtf(m2 + kEps);
+    if(lane == 0) mean2[row] = m2;
+
+    for(int c = lane * 2; c < C; c+=32 * 2){
+        V2 xv = *reinterpret_cast<const V2*>(xr + c);
+        V2 wv = *reinterpret_cast<const V2*>(w + c);
+        V2 r;
+        r.x = from_float<T>(as_float(xv.x) * as_float(wv.x) * inv);
+        r.y = from_float<T>(as_float(xv.y) * as_float(wv.y) * inv);
+        *reinterpret_cast<V2*>(yr + c) = r;
+    }
+} 
 // ----------------------------------------------------------------------------
 // kernel launch
 
@@ -459,114 +569,189 @@ void rmsnorm_forward6(
     CUDA_CHECK(cudaGetLastError());
 }
 
+template <typename T>
+void rmsnorm_forward7(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int B,
+    int T1,
+    int C,
+    int block_size
+){
+    assert(block_size % 32 == 0);
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+    rmsnorm_forward_kernel7<T><<<grid_size, block_size>>>(y, mean2, x, w, N, C);
+    CUDA_CHECK(cudaGetLastError());
+
+}
+
+template <typename T>
+void rmsnorm_forward8(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int B,
+    int T1,
+    int C,
+    int block_size    
+){
+    assert(block_size % 32 == 0);
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+
+    bool use_vec2 = (C % 2 == 0) &&
+                    is_aligned(x, 2 * sizeof(T)) && is_aligned(w, 2 * sizeof(T)) &&
+                    is_aligned(y, 2 * sizeof(T));
+    if (use_vec2) {
+        rmsnorm_forward_kernel8<T><<<grid_size, block_size>>>(
+            y, mean2, x, w, N, C);
+    } else {
+        rmsnorm_forward_kernel7<T><<<grid_size, block_size>>>(
+            y, mean2, x, w, N, C);
+    }
+    CUDA_CHECK(cudaGetLastError());
+}
+
+template <typename T>
 void rmsnorm_forward(
     int kernel_num,
-    float* y,
+    T* y,
     float* mean2,
-    const float* x,
-    const float* w,
+    const T* x,
+    const T* w,
     int B,
-    int T,
+    int T1,
     int C,
     const int block_size
 ){
-    switch(kernel_num){
-        case 1:
-            rmsnorm_forward1(y, mean2, x, w, B, T, C, block_size);
-            break;
-        case 2:
-            rmsnorm_forward2(y, mean2, x, w, B, T, C, block_size);
-            break;
-        case 3:
-            rmsnorm_forward3(y, mean2, x, w, B, T, C, block_size);
-            break;
-        case 4:
-            rmsnorm_forward4(y, mean2, x, w, B, T, C, block_size);
-            break;
-        case 5:
-            rmsnorm_forward5(y, mean2, x, w, B, T, C, block_size);
-            break;
-        case 6:
-            rmsnorm_forward6(y, mean2, x, w, B, T, C, block_size);
-            break;
-        default:
-            std::printf("Invalid kernel number.\n");
-            exit(1);
+    if constexpr (std::is_same_v<T, float>) {
+        // T=float：1~8 全可用（1~6 是 FP32 专用 kernel）
+        switch (kernel_num) {
+            case 1: rmsnorm_forward1(y, mean2, x, w, B, T1, C, block_size); break;
+            case 2: rmsnorm_forward2(y, mean2, x, w, B, T1, C, block_size); break;
+            case 3: rmsnorm_forward3(y, mean2, x, w, B, T1, C, block_size); break;
+            case 4: rmsnorm_forward4(y, mean2, x, w, B, T1, C, block_size); break;
+            case 5: rmsnorm_forward5(y, mean2, x, w, B, T1, C, block_size); break;
+            case 6: rmsnorm_forward6(y, mean2, x, w, B, T1, C, block_size); break;
+            case 7: rmsnorm_forward7<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            case 8: rmsnorm_forward8<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            default:
+                std::printf("Invalid kernel number.\n");
+                exit(1);
+        }
+    } else {
+        // T=half/bf16：只有混合精度 kernel 7(标量)/8(vec2) 可用
+        switch (kernel_num) {
+            case 7: rmsnorm_forward7<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            case 8: rmsnorm_forward8<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            default:
+                std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
+                exit(1);
+        }
     }
 }
 
+// ---- 通用测试：先对拍、再测速度（FP32/FP16/BF16 共用）----
+template <typename T>
+int run_benchmark(const char* dtype_name, int kernel_num, float tol) {
+    const int B = 8, T_tokens = 1024, C = 768;
+    const int N = B * T_tokens;
 
-int main(int argc, char **argv){
+    // 1) 生成 T 类型的输入（[-1, 1]）
+    std::vector<T> h_x(N * C), h_w(C);
     srand(0);
+    for (int i = 0; i < N * C; ++i) h_x[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
+    for (int i = 0; i < C; ++i)     h_w[i] = from_float<T>((float)rand() / RAND_MAX * 2.0f - 1.0f);
 
-    int B = 8;
-    int T = 1024;
-    int C = 768;
+    // 2) CPU 参考（double 归约，更接近真值）
+    std::vector<T> h_y(N * C);
+    std::vector<float> h_mean2(N);
+    rmsnorm_forward_cpu<T>(h_y.data(), h_mean2.data(), h_x.data(), h_w.data(), N, C);
 
-    int deviceIdx = 0;
-    CUDA_CHECK(cudaSetDevice(deviceIdx));
-
-    // 创建cpu上内存分配并输出化输入
-    float* y = (float*)malloc(B * T * C * sizeof(float));
-    float* mean2 = (float*)malloc(B * T * sizeof(float));
-    float* x = make_random_float(B * T * C);
-    float* w = make_random_float(C);
-
-    // 创建gpu上内存分配并复制输入
-    float* d_y;
+    // 3) 设备内存
+    T *d_y, *d_x, *d_w;
     float* d_mean2;
-    float* d_x;
-    float* d_w;
-    CUDA_CHECK(cudaMalloc(&d_y, B * T * C * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_mean2, B * T * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_x, B * T * C * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_w, C * sizeof(float)));
-    CUDA_CHECK(cudaMemcpy(d_x, x, B * T * C * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_w, w, C * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&d_y, N * C * sizeof(T)));
+    CUDA_CHECK(cudaMalloc(&d_mean2, N * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_x, N * C * sizeof(T)));
+    CUDA_CHECK(cudaMalloc(&d_w, C * sizeof(T)));
+    CUDA_CHECK(cudaMemcpy(d_x, h_x.data(), N * C * sizeof(T), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_w, h_w.data(), C * sizeof(T), cudaMemcpyHostToDevice));
 
-    // 从命令行读取kernel序号
-    int kernel_num = 1;
-    if(argc > 1){
-        kernel_num = atoi(argv[1]);
-    }
-    std::printf("Using kernel %d\n", kernel_num);
-
+    // 4) 对拍：遍历 block 大小
     int block_sizes[] = {32, 64, 128, 256, 512, 1024};
-
-    rmsnorm_forward_cpu(y, mean2, x, w, B * T, C);
-
-    for(int j = 0; j < sizeof(block_sizes) / sizeof(int); ++j){
+    int bad = 0;
+    for (int j = 0; j < 6; ++j) {
         int block_size = block_sizes[j];
-        std::printf("Checking block size %d.\n", block_size);
+        rmsnorm_forward<T>(kernel_num, d_y, d_mean2, d_x, d_w, B, T_tokens, C, block_size);
+        CUDA_CHECK(cudaDeviceSynchronize());
 
-        rmsnorm_forward(kernel_num, d_y, d_mean2, d_x, d_w, B, T, C, block_size);
+        std::vector<T> got_y(N * C);
+        std::vector<float> got_mean2(N);
+        CUDA_CHECK(cudaMemcpy(got_y.data(), d_y, N * C * sizeof(T), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(got_mean2.data(), d_mean2, N * sizeof(float), cudaMemcpyDeviceToHost));
 
-        validate_result(d_y, y, "y", B * T * C, 1e-5f);
-        validate_result(d_mean2, mean2, "mean2", B * T, 1e-5f);
+        double max_abs = 0, max_rel = 0;
+        for (int i = 0; i < N * C; ++i) {
+            double a = as_float(got_y[i]), b = as_float(h_y[i]);
+            double diff = std::fabs(a - b);
+            max_abs = std::max(max_abs, diff);
+            max_rel = std::max(max_rel, diff / (std::fabs(b) + 1e-12));
+            if (diff > tol + tol * std::fabs(b)) ++bad;
+        }
+        // mean2 始终是 FP32，用固定容差
+        for (int i = 0; i < N; ++i) {
+            double diff = std::fabs((double)got_mean2[i] - h_mean2[i]);
+            if (diff > 2e-4f + 2e-4f * std::fabs(h_mean2[i])) ++bad;
+        }
+        std::printf("[%s] block %4d | y max_abs=%.3g max_rel=%.3g\n",
+                    dtype_name, block_size, max_abs, max_rel);
+    }
+    if (bad) {
+        std::printf("[%s] FAILED (%d errors)\n", dtype_name, bad);
+    } else {
+        std::printf("[%s] All results match. Starting benchmarks.\n\n", dtype_name);
     }
 
-    printf("All results match. Starting benchmarks.\n\n");
-
-    for(int j = 0; j < sizeof(block_sizes) / sizeof(int); ++j){
+    // 5) 测速度：遍历 block 大小
+    for (int j = 0; j < 6; ++j) {
         int block_size = block_sizes[j];
-
-        int repeat_times = 2000;
-        float elapsed_time = benchmark_kernel(repeat_times, rmsnorm_forward, 
-                                            kernel_num, d_y, d_mean2, 
-                                            d_x, d_w, B, T, C, block_size);
-        long memory_ops = (2 * B * T * C) * 4;
+        float elapsed_time = benchmark_kernel(2000, rmsnorm_forward<T>, kernel_num,
+                                              d_y, d_mean2, d_x, d_w, B, T_tokens, C, block_size);
+        long memory_ops = (2L * N * C) * sizeof(T);   // 读 x + 写 y 的字节数
         float memory_bandwidth = memory_ops / elapsed_time / 1e6;
-
-        printf("block_size %4d | time %.4f ms | bandwidth %.2f GB/s\n", block_size, elapsed_time, memory_bandwidth);
+        printf("[%s] block_size %4d | time %.4f ms | bandwidth %.2f GB/s\n",
+               dtype_name, block_size, elapsed_time, memory_bandwidth);
     }
 
-    free(y);
-    free(mean2);
-    free(x);
-    free(w);
     CUDA_CHECK(cudaFree(d_y));
     CUDA_CHECK(cudaFree(d_mean2));
     CUDA_CHECK(cudaFree(d_x));
     CUDA_CHECK(cudaFree(d_w));
-    return 0;
+    return bad ? 1 : 0;
+}
+
+int main(int argc, char **argv){
+    int kernel_num = 7;                    // 默认跑混合精度标量版
+    if (argc > 1) kernel_num = atoi(argv[1]);
+    std::printf("Using kernel %d\n", kernel_num);
+
+    // kernel 1~6 是 FP32 专用
+    if (kernel_num >= 1 && kernel_num <= 6) {
+        return run_benchmark<float>("fp32", kernel_num, 3e-4f);
+    }
+    // kernel 7(标量) / 8(vec2) 是混合精度版：三种 dtype 各跑一遍对拍 + 带宽
+    if (kernel_num == 7 || kernel_num == 8) {
+        int fails = 0;
+        fails += run_benchmark<float>("fp32", kernel_num, 3e-4f);
+        fails += run_benchmark<half>("fp16", kernel_num, 5e-3f);
+        fails += run_benchmark<__nv_bfloat16>("bf16", kernel_num, 4e-2f);
+        return fails ? 1 : 0;
+    }
+    std::printf("Invalid kernel number (1~8).\n");
+    return 1;
 }
