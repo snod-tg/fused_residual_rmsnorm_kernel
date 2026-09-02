@@ -1,0 +1,204 @@
+Using kernel 1
+[fp32] block   32 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] block   64 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] block  128 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] block  256 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] block  512 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] block 1024 | dx max_abs=3.58e-07 max_rel=0.0993
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 3.6477 ms | bandwidth 20.71 GB/s
+[fp32] block_size   64 | time 3.2073 ms | bandwidth 23.55 GB/s
+[fp32] block_size  128 | time 3.1780 ms | bandwidth 23.77 GB/s
+[fp32] block_size  256 | time 3.2154 ms | bandwidth 23.49 GB/s
+[fp32] block_size  512 | time 4.0858 ms | bandwidth 18.49 GB/s
+[fp32] block_size 1024 | time 5.1982 ms | bandwidth 14.53 GB/s
+Using kernel 2
+[fp32] block   32 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block   64 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  128 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  256 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  512 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block 1024 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.3669 ms | bandwidth 205.88 GB/s
+[fp32] block_size   64 | time 0.4201 ms | bandwidth 179.81 GB/s
+[fp32] block_size  128 | time 0.4267 ms | bandwidth 177.01 GB/s
+[fp32] block_size  256 | time 0.4264 ms | bandwidth 177.17 GB/s
+[fp32] block_size  512 | time 0.4262 ms | bandwidth 177.24 GB/s
+[fp32] block_size 1024 | time 0.4161 ms | bandwidth 181.52 GB/s
+Using kernel 3
+[fp32] block   32 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block   64 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  128 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  256 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  512 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block 1024 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.3794 ms | bandwidth 199.10 GB/s
+[fp32] block_size   64 | time 0.4151 ms | bandwidth 181.95 GB/s
+[fp32] block_size  128 | time 0.4183 ms | bandwidth 180.57 GB/s
+[fp32] block_size  256 | time 0.4151 ms | bandwidth 181.99 GB/s
+[fp32] block_size  512 | time 0.4150 ms | bandwidth 182.00 GB/s
+[fp32] block_size 1024 | time 0.4137 ms | bandwidth 182.59 GB/s
+Using kernel 4
+[fp32] block   32 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block   64 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  128 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  256 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  512 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block 1024 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.4020 ms | bandwidth 187.92 GB/s
+[fp32] block_size   64 | time 0.4194 ms | bandwidth 180.11 GB/s
+[fp32] block_size  128 | time 0.4205 ms | bandwidth 179.63 GB/s
+[fp32] block_size  256 | time 0.4305 ms | bandwidth 175.47 GB/s
+[fp32] block_size  512 | time 0.4247 ms | bandwidth 177.86 GB/s
+[fp32] block_size 1024 | time 0.4247 ms | bandwidth 177.87 GB/s
+Using kernel 5
+[fp32] block   32 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block   64 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  128 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  256 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  512 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block 1024 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.4134 ms | bandwidth 182.70 GB/s
+[fp32] block_size   64 | time 0.4315 ms | bandwidth 175.05 GB/s
+[fp32] block_size  128 | time 0.4257 ms | bandwidth 177.45 GB/s
+[fp32] block_size  256 | time 0.4241 ms | bandwidth 178.10 GB/s
+[fp32] block_size  512 | time 0.4257 ms | bandwidth 177.44 GB/s
+[fp32] block_size 1024 | time 0.4287 ms | bandwidth 176.20 GB/s
+Using kernel 6
+[fp32] block   32 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block   64 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  128 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  256 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  512 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block 1024 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.3744 ms | bandwidth 201.74 GB/s
+[fp32] block_size   64 | time 0.4114 ms | bandwidth 183.59 GB/s
+[fp32] block_size  128 | time 0.4180 ms | bandwidth 180.71 GB/s
+[fp32] block_size  256 | time 0.4108 ms | bandwidth 183.90 GB/s
+[fp32] block_size  512 | time 0.4138 ms | bandwidth 182.55 GB/s
+[fp32] block_size 1024 | time 0.4153 ms | bandwidth 181.88 GB/s
+[fp16] block   32 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block   64 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  128 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  256 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  512 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block 1024 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] All results match. Starting benchmarks.
+
+[fp16] block_size   32 | time 0.1584 ms | bandwidth 238.48 GB/s
+[fp16] block_size   64 | time 0.1819 ms | bandwidth 207.69 GB/s
+[fp16] block_size  128 | time 0.2068 ms | bandwidth 182.73 GB/s
+[fp16] block_size  256 | time 0.1985 ms | bandwidth 190.38 GB/s
+[fp16] block_size  512 | time 0.1953 ms | bandwidth 193.51 GB/s
+[fp16] block_size 1024 | time 0.1910 ms | bandwidth 197.87 GB/s
+[bf16] block   32 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block   64 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  128 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  256 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  512 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block 1024 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] All results match. Starting benchmarks.
+
+[bf16] block_size   32 | time 0.1587 ms | bandwidth 238.11 GB/s
+[bf16] block_size   64 | time 0.1987 ms | bandwidth 190.21 GB/s
+[bf16] block_size  128 | time 0.2059 ms | bandwidth 183.54 GB/s
+[bf16] block_size  256 | time 0.1973 ms | bandwidth 191.50 GB/s
+[bf16] block_size  512 | time 0.1945 ms | bandwidth 194.30 GB/s
+[bf16] block_size 1024 | time 0.1898 ms | bandwidth 199.03 GB/s
+Using kernel 7
+[fp32] block   32 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block   64 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  128 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  256 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block  512 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] block 1024 | dx max_abs=2.38e-07 max_rel=0.0156
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.4111 ms | bandwidth 183.74 GB/s
+[fp32] block_size   64 | time 0.4309 ms | bandwidth 175.32 GB/s
+[fp32] block_size  128 | time 0.4173 ms | bandwidth 181.01 GB/s
+[fp32] block_size  256 | time 0.4285 ms | bandwidth 176.28 GB/s
+[fp32] block_size  512 | time 0.4158 ms | bandwidth 181.65 GB/s
+[fp32] block_size 1024 | time 0.4164 ms | bandwidth 181.39 GB/s
+[fp16] block   32 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] block   64 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] block  128 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] block  256 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] block  512 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] block 1024 | dx max_abs=0.000977 max_rel=0.0109
+[fp16] All results match. Starting benchmarks.
+
+[fp16] block_size   32 | time 0.1734 ms | bandwidth 217.92 GB/s
+[fp16] block_size   64 | time 0.2128 ms | bandwidth 177.57 GB/s
+[fp16] block_size  128 | time 0.2144 ms | bandwidth 176.27 GB/s
+[fp16] block_size  256 | time 0.2159 ms | bandwidth 175.01 GB/s
+[fp16] block_size  512 | time 0.2112 ms | bandwidth 178.94 GB/s
+[fp16] block_size 1024 | time 0.2076 ms | bandwidth 182.03 GB/s
+[bf16] block   32 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] block   64 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] block  128 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] block  256 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] block  512 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] block 1024 | dx max_abs=0.00781 max_rel=0.0249
+[bf16] All results match. Starting benchmarks.
+
+[bf16] block_size   32 | time 0.1756 ms | bandwidth 215.21 GB/s
+[bf16] block_size   64 | time 0.2151 ms | bandwidth 175.64 GB/s
+[bf16] block_size  128 | time 0.2125 ms | bandwidth 177.82 GB/s
+[bf16] block_size  256 | time 0.2121 ms | bandwidth 178.15 GB/s
+[bf16] block_size  512 | time 0.2098 ms | bandwidth 180.13 GB/s
+[bf16] block_size 1024 | time 0.2070 ms | bandwidth 182.53 GB/s
+Using kernel 8
+[fp32] block   32 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block   64 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  128 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  256 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block  512 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] block 1024 | dx max_abs=3.58e-07 max_rel=0.00948
+[fp32] All results match. Starting benchmarks.
+
+[fp32] block_size   32 | time 0.2637 ms | bandwidth 286.45 GB/s
+[fp32] block_size   64 | time 0.2589 ms | bandwidth 291.77 GB/s
+[fp32] block_size  128 | time 0.2581 ms | bandwidth 292.69 GB/s
+[fp32] block_size  256 | time 0.2591 ms | bandwidth 291.51 GB/s
+[fp32] block_size  512 | time 0.2569 ms | bandwidth 294.08 GB/s
+[fp32] block_size 1024 | time 0.4202 ms | bandwidth 179.78 GB/s
+[fp16] block   32 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block   64 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  128 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  256 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block  512 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] block 1024 | dx max_abs=0.000977 max_rel=0.00758
+[fp16] All results match. Starting benchmarks.
+
+[fp16] block_size   32 | time 0.1450 ms | bandwidth 260.60 GB/s
+[fp16] block_size   64 | time 0.1358 ms | bandwidth 278.22 GB/s
+[fp16] block_size  128 | time 0.1321 ms | bandwidth 286.03 GB/s
+[fp16] block_size  256 | time 0.1326 ms | bandwidth 285.06 GB/s
+[fp16] block_size  512 | time 0.1322 ms | bandwidth 285.78 GB/s
+[fp16] block_size 1024 | time 0.1828 ms | bandwidth 206.67 GB/s
+[bf16] block   32 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block   64 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  128 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  256 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block  512 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] block 1024 | dx max_abs=0.00781 max_rel=0.0348
+[bf16] All results match. Starting benchmarks.
+
+[bf16] block_size   32 | time 0.1381 ms | bandwidth 273.64 GB/s
+[bf16] block_size   64 | time 0.1331 ms | bandwidth 283.94 GB/s
+[bf16] block_size  128 | time 0.1321 ms | bandwidth 286.09 GB/s
+[bf16] block_size  256 | time 0.1320 ms | bandwidth 286.29 GB/s
+[bf16] block_size  512 | time 0.1326 ms | bandwidth 285.01 GB/s
+[bf16] block_size 1024 | time 0.1821 ms | bandwidth 207.55 GB/s

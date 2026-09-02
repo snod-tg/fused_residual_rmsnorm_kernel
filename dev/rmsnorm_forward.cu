@@ -276,6 +276,7 @@ __global__ void rmsnorm_forward_kernel5(
 }
 
 // Grid-Stride + 尾部处理 + __ldg
+// Grid-Stride 在数据量非常大的时候更有用
 __global__ void rmsnorm_forward_kernel6(
     float* __restrict__ y, 
     float* __restrict__ mean2,
@@ -420,6 +421,113 @@ __global__ void rmsnorm_forward_kernel8(
         *reinterpret_cast<V2*>(yr + c) = r;
     }
 } 
+
+// single-pass：把一行 x 载入共享内存（全局 x 只读一次），归约后直接从共享内存写 y
+template <typename T>
+__global__ void rmsnorm_forward_kernel9(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int N,
+    int C
+){
+    // 动态共享内存必须使用与模板参数无关的底层符号；否则同一翻译单元中
+    // float/half/bf16 的模板实例会把 shared_x 声明成互不兼容的类型。
+    extern __shared__ __align__(16) unsigned char shared_x_bytes[];
+    T* shared_x = reinterpret_cast<T*>(shared_x_bytes);  // 大小 = warps * C
+
+    int lane = threadIdx.x % 32;
+    int warp_id = threadIdx.x / 32;
+    int warps = blockDim.x / 32;
+    int row = blockIdx.x * warps + warp_id;
+    if(row >= N) return;
+
+    const T* xr = x + (size_t)row * C;
+    T* yr = y + (size_t)row * C;
+    T* sx = shared_x + (size_t)warp_id * C;   // 本 warp 负责的那一行在共享内存里的位置
+
+    // 1) 把这一行 x 读进共享内存（全局只读一次），同时累加平方和
+    float sum = 0.0f;
+    for(int c = lane; c < C; c += 32){
+        T v = xr[c];
+        sx[c] = v;
+        sum += as_float(v) * as_float(v);
+    }
+
+    // 2) warp 内归约
+    for(int off = 16; off > 0; off >>= 1)
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+
+    float m2 = sum / C;
+    float inv = rsqrtf(m2 + kEps);
+    if(lane == 0) mean2[row] = m2;
+
+    // 3) 从共享内存读 x，写 y（不再读全局 x）
+    for(int c = lane; c < C; c += 32){
+        yr[c] = from_float<T>(as_float(sx[c]) * as_float(w[c]) * inv);
+    }
+}
+
+// FP32 专用 single-pass：用寄存器缓存一行中每个 lane 负责的 24 个元素。
+// C=768 时每个 lane 恰好读取 6 个 float4；归约后直接从寄存器写 y，
+// 从而同时消除 kernel7 的第二次全局 x 读取和 kernel9 的共享内存往返。
+__global__ __launch_bounds__(1024, 1) void rmsnorm_forward_kernel10(
+    float* __restrict__ y,
+    float* __restrict__ mean2,
+    const float* __restrict__ x,
+    const float* __restrict__ w,
+    int N
+){
+    constexpr int kChannels = 768;
+    constexpr int kVecWidth = 4;
+    constexpr int kVecsPerLane = kChannels / (32 * kVecWidth); // 6
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int warps = blockDim.x >> 5;
+    const int row = blockIdx.x * warps + warp_id;
+    if (row >= N) return;
+
+    const float* xr = x + (size_t)row * kChannels;
+    float* yr = y + (size_t)row * kChannels;
+    float4 cached_x[kVecsPerLane];
+    float sum = 0.0f;
+
+    // 每个 warp 每轮连续读取 512 byte；6 轮正好覆盖 768 个 float。
+    #pragma unroll
+    for (int i = 0; i < kVecsPerLane; ++i) {
+        const int c = (i * 32 + lane) * kVecWidth;
+        float4 v = *reinterpret_cast<const float4*>(xr + c);
+        cached_x[i] = v;
+        sum = fmaf(v.x, v.x, sum);
+        sum = fmaf(v.y, v.y, sum);
+        sum = fmaf(v.z, v.z, sum);
+        sum = fmaf(v.w, v.w, sum);
+    }
+
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+    }
+
+    const float m2 = sum / kChannels;
+    const float inv = rsqrtf(m2 + kEps);
+    if (lane == 0) mean2[row] = m2;
+
+    #pragma unroll
+    for (int i = 0; i < kVecsPerLane; ++i) {
+        const int c = (i * 32 + lane) * kVecWidth;
+        const float4 xv = cached_x[i];
+        const float4 wv = *reinterpret_cast<const float4*>(w + c);
+        float4 r;
+        r.x = xv.x * wv.x * inv;
+        r.y = xv.y * wv.y * inv;
+        r.z = xv.z * wv.z * inv;
+        r.w = xv.w * wv.w * inv;
+        *reinterpret_cast<float4*>(yr + c) = r;
+    }
+}
 // ----------------------------------------------------------------------------
 // kernel launch
 
@@ -616,6 +724,67 @@ void rmsnorm_forward8(
     CUDA_CHECK(cudaGetLastError());
 }
 
+// 混合精度 launcher：kernel9 = single-pass（x 只读一次，缓存到共享内存）
+template <typename T>
+void rmsnorm_forward9(
+    T* y,
+    float* mean2,
+    const T* x,
+    const T* w,
+    int B,
+    int T1,
+    int C,
+    int block_size
+){
+    assert(block_size % 32 == 0);
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+
+    const int warps = block_size / 32;
+    size_t smem_size = (size_t)warps * C * sizeof(T);   // 每个 warp 缓存一行
+
+    // 共享内存放不下整行时，回退到 kernel7（两遍循环）
+    int device;
+    cudaGetDevice(&device);
+    int max_smem;
+    cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlockOptin, device);
+    if ((int)smem_size > max_smem) {
+        rmsnorm_forward7<T>(y, mean2, x, w, B, T1, C, block_size);
+        return;
+    }
+
+    cudaFuncSetAttribute(rmsnorm_forward_kernel9<T>,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+    rmsnorm_forward_kernel9<T><<<grid_size, block_size, smem_size>>>(y, mean2, x, w, N, C);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// kernel10 针对当前实测 shape C=768 做寄存器缓存 + float4 专用化。
+// 其它 C 或未满足 16-byte 对齐时回退到通用 single-pass kernel9。
+void rmsnorm_forward10(
+    float* y,
+    float* mean2,
+    const float* x,
+    const float* w,
+    int B,
+    int T1,
+    int C,
+    int block_size
+){
+    assert(block_size % 32 == 0);
+    const int N = B * T1;
+    const bool use_register_path =
+        C == 768 && is_aligned(x, 16) && is_aligned(w, 16) && is_aligned(y, 16);
+    if (!use_register_path) {
+        rmsnorm_forward9<float>(y, mean2, x, w, B, T1, C, block_size);
+        return;
+    }
+
+    const int grid_size = ceil_div(N * 32, block_size);
+    rmsnorm_forward_kernel10<<<grid_size, block_size>>>(y, mean2, x, w, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 template <typename T>
 void rmsnorm_forward(
     int kernel_num,
@@ -629,7 +798,7 @@ void rmsnorm_forward(
     const int block_size
 ){
     if constexpr (std::is_same_v<T, float>) {
-        // T=float：1~8 全可用（1~6 是 FP32 专用 kernel）
+        // T=float：1~10 全可用（1~6/10 是 FP32 专用，7~9 是混合精度）
         switch (kernel_num) {
             case 1: rmsnorm_forward1(y, mean2, x, w, B, T1, C, block_size); break;
             case 2: rmsnorm_forward2(y, mean2, x, w, B, T1, C, block_size); break;
@@ -639,15 +808,18 @@ void rmsnorm_forward(
             case 6: rmsnorm_forward6(y, mean2, x, w, B, T1, C, block_size); break;
             case 7: rmsnorm_forward7<T>(y, mean2, x, w, B, T1, C, block_size); break;
             case 8: rmsnorm_forward8<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            case 9: rmsnorm_forward9<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            case 10: rmsnorm_forward10(y, mean2, x, w, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
         }
     } else {
-        // T=half/bf16：只有混合精度 kernel 7(标量)/8(vec2) 可用
+        // T=half/bf16：只有混合精度 kernel 7(标量)/8(vec2)/9(single-pass) 可用
         switch (kernel_num) {
             case 7: rmsnorm_forward7<T>(y, mean2, x, w, B, T1, C, block_size); break;
             case 8: rmsnorm_forward8<T>(y, mean2, x, w, B, T1, C, block_size); break;
+            case 9: rmsnorm_forward9<T>(y, mean2, x, w, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);
@@ -740,18 +912,18 @@ int main(int argc, char **argv){
     if (argc > 1) kernel_num = atoi(argv[1]);
     std::printf("Using kernel %d\n", kernel_num);
 
-    // kernel 1~6 是 FP32 专用
-    if (kernel_num >= 1 && kernel_num <= 6) {
+    // kernel 1~6 与 kernel10 是 FP32 专用
+    if ((kernel_num >= 1 && kernel_num <= 6) || kernel_num == 10) {
         return run_benchmark<float>("fp32", kernel_num, 3e-4f);
     }
-    // kernel 7(标量) / 8(vec2) 是混合精度版：三种 dtype 各跑一遍对拍 + 带宽
-    if (kernel_num == 7 || kernel_num == 8) {
+    // kernel 7(标量) / 8(vec2) / 9(single-pass) 是混合精度版：三种 dtype 各跑一遍
+    if (kernel_num == 7 || kernel_num == 8 || kernel_num == 9) {
         int fails = 0;
         fails += run_benchmark<float>("fp32", kernel_num, 3e-4f);
         fails += run_benchmark<half>("fp16", kernel_num, 5e-3f);
         fails += run_benchmark<__nv_bfloat16>("bf16", kernel_num, 4e-2f);
         return fails ? 1 : 0;
     }
-    std::printf("Invalid kernel number (1~8).\n");
+    std::printf("Invalid kernel number (1~10).\n");
     return 1;
 }

@@ -1,0 +1,431 @@
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     93.3      13111141167      24000    546297.5   643143.0      1202    2044248     583957.4  cudaEventSynchronize
+      2.2        303492702      12000     25291.1    21862.0     19737     591014      10533.7  cudaMemset
+      1.8        252892510         10  25289251.0   559777.5      3917  248343469   78373488.1  cudaMalloc
+      1.2        172559874      24000      7190.0     6182.0      4338     306984       5934.5  cudaEventRecord
+      1.2        163703261      12006     13635.1    11502.0      9117     783689      10544.5  cudaLaunchKernel
+      0.2         30017491         14   2144106.5  2159897.5     50987    4748160    2139058.9  cudaMemcpy
+      0.1          8836746          6   1472791.0  1275706.0    943805    2583413     617284.7  cudaDeviceSynchronize
+      0.0          4599949      12006       383.1      291.0       240     446009       4147.4  cuKernelGetName
+      0.0          3612704         10    361270.4   423142.0      7404     553112     163455.5  cudaFree
+      0.0          1654656          1   1654656.0  1654656.0   1654656    1654656          0.0  cuLibraryLoadData
+      0.0           770967         12     64247.3     2344.5       721     720220     206723.2  cudaEventCreate
+      0.0             4940          1      4940.0     4940.0      4940       4940          0.0  cuModuleGetLoadingMode
+      0.0             4718          6       786.3      636.0       581       1593        396.0  cudaGetDeviceProperties_v12000
+      0.0              681          1       681.0      681.0       681        681          0.0  cuLibraryGetKernel
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  ---------  ---------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0      12721119674      12006  1059563.5  1004052.5    709882   2504924     368402.4  rmsnorm_forward_kernel1(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     82.4        126777120  12000    10564.8    10209.0      6560     15488       1063.1  [CUDA memset]
+     15.2         23321497     12  1943458.1  1939191.0      6049   3899183    2023296.9  [CUDA memcpy Device-to-Host]
+      2.5          3829037      2  1914518.5  1914518.5      1056   3827981    2706044.6  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     76.5       3085401098      24000    128558.4   165745.0      1192    1298870     109329.4  cudaEventSynchronize
+      7.2        289176967      12000     24098.1    20950.0     10460     677077      11604.3  cudaMemset
+      6.5        262165013         10  26216501.3   545206.5      4388  257629405   81310427.7  cudaMalloc
+      4.7        189287147      24000      7887.0     6071.0      4248     241640       7695.8  cudaEventRecord
+      4.1        165696132      12006     13801.1    11231.0      7354    1045278      13535.8  cudaLaunchKernel
+      0.8         30414427         14   2172459.1  2168594.5     52530    5011732    2171361.6  cudaMemcpy
+      0.1          4452208      12006       370.8      290.0       160     440088       4057.1  cuKernelGetName
+      0.1          3350162         10    335016.2   376430.5      6542     467570     130683.4  cudaFree
+      0.1          2068214          1   2068214.0  2068214.0   2068214    2068214          0.0  cuLibraryLoadData
+      0.0          1871039          6    311839.8   316527.0    199780     401353      64880.2  cudaDeviceSynchronize
+      0.0           729043         12     60753.6     2800.5       561     704044     202589.4  cudaEventCreate
+      0.0            59404          6      9900.7      622.0       571      55155      22175.6  cudaGetDeviceProperties_v12000
+      0.0             4648          1      4648.0     4648.0      4648       4648          0.0  cuModuleGetLoadingMode
+      0.0              691          1       691.0      691.0       691        691          0.0  cuLibraryGetKernel
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0       2751055373      12006  229140.0  230186.0    196937    287340      15141.2  rmsnorm_forward_kernel2(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     82.7        130306534  12000    10858.9    10561.0      5664     15456        942.4  [CUDA memset]
+     14.8         23345603     12  1945466.9  1938515.0      5920   3916743    2025530.8  [CUDA memcpy Device-to-Host]
+      2.4          3832771      2  1916385.5  1916385.5      1088   3831683    2708639.7  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     76.4       3117837325      24000    129909.9   166481.5      1162    1147102     111302.0  cudaEventSynchronize
+      6.9        282610881         10  28261088.1   570630.0      5250  278097655   87783841.9  cudaMalloc
+      6.9        281133460      12000     23427.8    20619.0     11021     605999      10751.6  cudaMemset
+      4.7        191492140      24000      7978.8     6072.0      4288     225994       8683.9  cudaEventRecord
+      4.0        164894235      12006     13734.3    11201.0      7244     853823      12436.3  cudaLaunchKernel
+      0.8         31115549         14   2222539.2  2182020.0     63741    4703757    2214716.1  cudaMemcpy
+      0.1          4545608      12006       378.6      291.0       151     540510       4967.8  cuKernelGetName
+      0.1          3568300         10    356830.0   412044.5      9157     524346     147285.4  cudaFree
+      0.0          1970586          1   1970586.0  1970586.0   1970586    1970586          0.0  cuLibraryLoadData
+      0.0          1866430          6    311071.7   312955.5    249464     346639      33855.0  cudaDeviceSynchronize
+      0.0           702094         12     58507.8     2359.5       561     674022     193847.1  cudaEventCreate
+      0.0             5881          1      5881.0     5881.0      5881       5881          0.0  cuModuleGetLoadingMode
+      0.0             4198          6       699.7      636.0       601       1042        168.9  cudaGetDeviceProperties_v12000
+      0.0              821          1       821.0      821.0       821        821          0.0  cuLibraryGetKernel
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0       2803174870      12006  233481.2  233111.5    201767    301642      14631.2  rmsnorm_forward_kernel3(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     82.2        130314509  12000    10859.5    10592.0      5568     15296        904.2  [CUDA memset]
+     15.4         24439819     12  2036651.6  1956627.5      6048   4303252    2122782.1  [CUDA memcpy Device-to-Host]
+      2.4          3834884      2  1917442.0  1917442.0      1088   3833796    2710133.8  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     77.2       3135851153      24000    130660.5   176059.5      1182     528095     111548.0  cudaEventSynchronize
+      6.9        280230893      12000     23352.6    20920.0     10410     701816      10803.8  cudaMemset
+      6.5        263447206         10  26344720.6   528946.0      3837  259260272   81838377.3  cudaMalloc
+      4.4        180489194      24000      7520.4     6041.0      4238     574192       8322.4  cudaEventRecord
+      3.9        157213099      12006     13094.5    11171.0      7364     874904      11033.8  cudaLaunchKernel
+      0.8         30914006         14   2208143.3  2184204.0     50947    5155245    2180866.1  cudaMemcpy
+      0.1          4451756      12006       370.8      290.0       130     424939       3946.3  cuKernelGetName
+      0.1          3362894         10    336289.4   372068.0      6001     485688     138681.3  cudaFree
+      0.0          1937525          1   1937525.0  1937525.0   1937525    1937525          0.0  cuLibraryLoadData
+      0.0          1757842          6    292973.7   301217.5    221000     322954      36618.0  cudaDeviceSynchronize
+      0.0           787699         12     65641.6     2319.5       541     764594     220117.3  cudaEventCreate
+      0.0             5120          1      5120.0     5120.0      5120       5120          0.0  cuModuleGetLoadingMode
+      0.0             4418          6       736.3      596.0       491       1533        395.2  cudaGetDeviceProperties_v12000
+      0.0              731          1       731.0      731.0       731        731          0.0  cuLibraryGetKernel
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0       2805870033      12006  233705.6  234633.0    198376    301196      15420.3  rmsnorm_forward_kernel4(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     82.6        130122414  12000    10843.5    10561.0      6144     15489        911.6  [CUDA memset]
+     14.9         23539530     12  1961627.5  1951675.0      6112   3952185    2042337.2  [CUDA memcpy Device-to-Host]
+      2.4          3833492      2  1916746.0  1916746.0      1120   3832372    2709104.3  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     77.3       3134053483      24000    130585.6   163907.0      1182    1696116     113700.3  cudaEventSynchronize
+      6.9        278198523      12000     23183.2    20619.0     10379     562520      10593.7  cudaMemset
+      6.3        256365220         10  25636522.0   534233.5      5711  251727172   79440441.7  cudaMalloc
+      4.6        184644740      24000      7693.5     6052.0      4268     181165       7911.2  cudaEventRecord
+      4.0        160813679      12006     13394.4    11271.0      7624     406774       9324.9  cudaLaunchKernel
+      0.8         30422358         14   2173025.6  2153475.5     51007    4773188    2169277.7  cudaMemcpy
+      0.1          3482424      12006       290.1      251.0       160      18956        458.8  cuKernelGetName
+      0.1          3217938         10    321793.8   370249.0      7875     406709     118560.1  cudaFree
+      0.0          1920674          6    320112.3   318460.5    240498     408507      56862.1  cudaDeviceSynchronize
+      0.0           729426         12     60785.5     2439.5       481     705552     203054.8  cudaEventCreate
+      0.0             5129          1      5129.0     5129.0      5129       5129          0.0  cuModuleGetLoadingMode
+      0.0             4930          6       821.7      661.0       552       1633        404.2  cudaGetDeviceProperties_v12000
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0       2820661863      12006  234937.7  234921.0    194728    293644      14201.2  rmsnorm_forward_kernel5(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     82.5        129955028  12000    10829.6    10529.0      6016     15105        922.0  [CUDA memset]
+     15.0         23647061     12  1970588.4  1927642.5      5920   4068190    2052666.7  [CUDA memcpy Device-to-Host]
+      2.4          3832117      2  1916058.5  1916058.5      1088   3831029    2708177.3  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls   Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ----------  ---------  --------  ---------  -----------  ------------------------------
+     77.0       3137591652      24000    130733.0   170649.0      1082    1583986     116717.3  cudaEventSynchronize
+      6.9        281307470      12000     23442.3    20589.0     11161     547877      10973.4  cudaMemset
+      6.5        266556633         10  26655663.3   548749.5      3907  262084952   82721628.5  cudaMalloc
+      4.5        184256076      24000      7677.3     6012.0      4279     252069       7866.5  cudaEventRecord
+      4.0        164120849      12006     13669.9    11371.0      7414     488520      11179.3  cudaLaunchKernel
+      0.8         33117078         14   2365505.6  2131894.5     54734    7004522    2470137.8  cudaMemcpy
+      0.1          3703265      12006       308.5      270.0       171      53181        817.6  cuKernelGetName
+      0.1          3216989         10    321698.9   384728.5      6883     413507     125424.8  cudaFree
+      0.0          1935231          6    322538.5   326085.0    263652     365215      34814.1  cudaDeviceSynchronize
+      0.0           714027         12     59502.3     2405.0       531     690363     198675.2  cudaEventCreate
+      0.0             4889          6       814.8      616.5       521       1653        427.2  cudaGetDeviceProperties_v12000
+      0.0             3857          1      3857.0     3857.0      3857       3857          0.0  cuModuleGetLoadingMode
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                        Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  ---------------------------------------------------------------------------------
+    100.0       2863434468      12006  238500.3  236776.0    211272    304940      12308.5  rmsnorm_forward_kernel6(float *, float *, const float *, const float *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  ---------  --------  --------  -----------  ----------------------------
+     81.1        129172487  12000    10764.4    10496.0      5888     15233        904.1  [CUDA memset]
+     15.1         24068933     12  2005744.4  1928936.5      5921   4451654    2094171.1  [CUDA memcpy Device-to-Host]
+      3.8          6042850      2  3021425.0  3021425.0      1184   6041666    4271265.8  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+  37748.736  12000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    151.192     12    12.599    12.599     0.033    25.166       13.125  [CUDA memcpy Device-to-Host]
+     25.169      2    12.584    12.584     0.003    25.166       17.793  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls  Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ---------  ---------  --------  ---------  -----------  ------------------------------
+     75.6       6115724331      72000    84940.6    62439.0       591    1361551      77617.4  cudaEventSynchronize
+      8.1        653708087      36000    18158.6    14297.0      7364     657230      13229.3  cudaMemset
+      6.4        514886045      72000     7151.2     5660.5      4178     646710       8044.3  cudaEventRecord
+      5.4        439667251      36018    12206.9     9628.0      6232     807345      10584.3  cudaLaunchKernel
+      3.4        273220300         30  9107343.3   571228.5      3928  257627082   46938294.4  cudaMalloc
+      0.8         65820201         42  1567147.6  1182915.0     48061    8328199    1824951.7  cudaMemcpy
+      0.1         10291317         30   343043.9   388883.0      6091     516948     129498.2  cudaFree
+      0.1         10166633      36018      282.3      260.0       120     486866       2625.8  cuKernelGetName
+      0.0          3823355         18   212408.6   182567.5    135027     341289      71857.4  cudaDeviceSynchronize
+      0.0           833405          1   833405.0   833405.0    833405     833405          0.0  cuLibraryLoadData
+      0.0           810960         36    22526.7     3426.5       611     698549     115945.4  cudaEventCreate
+      0.0            15489         18      860.5      601.0       521       3006        616.8  cudaGetDeviceProperties_v12000
+      0.0             6162          3     2054.0     2505.0       831       2826       1071.2  cuLibraryGetKernel
+      0.0             3166          1     3166.0     3166.0      3166       3166          0.0  cuModuleGetLoadingMode
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                              Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  --------------------------------------------------------------------------------------------
+     54.4       2754891318      12006  229459.5  230793.0    195943    285482      14909.9  void rmsnorm_forward_kernel7<float>(T1 *, float *, const T1 *, const T1 *, int, int)
+     22.8       1157542574      12006   96413.7   95811.0     85315    122149       5427.7  void rmsnorm_forward_kernel7<__half>(T1 *, float *, const T1 *, const T1 *, int, int)
+     22.8       1155963491      12006   96282.1   95716.0     85347    122340       5349.5  void rmsnorm_forward_kernel7<__nv_bfloat16>(T1 *, float *, const T1 *, const T1 *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)  Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  --------  --------  --------  -----------  ----------------------------
+     87.0        387098345  36000    10752.7   10465.0      5920     15457        955.7  [CUDA memset]
+     10.6         47378247     36  1316062.4  968772.0      5920   3932819    1475968.5  [CUDA memcpy Device-to-Host]
+      2.4         10641100      6  1773516.7  976260.0       864   6478290    2521185.9  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+ 113246.208  36000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    302.580     36     8.405     6.308     0.033    25.166        9.497  [CUDA memcpy Device-to-Host]
+     50.338      6     8.390     6.293     0.002    25.166       10.273  [CUDA memcpy Host-to-Device]
+
+
+NOTICE: Existing SQLite export found: .nsys-rep.sqlite
+        It is assumed file was previously exported from: .nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_api_sum.py]...
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls  Avg (ns)   Med (ns)   Min (ns)  Max (ns)   StdDev (ns)               Name
+ --------  ---------------  ---------  ---------  ---------  --------  ---------  -----------  ------------------------------
+     76.7       6230780364      72000    86538.6    71025.0       551    1346100      79661.0  cudaEventSynchronize
+      7.8        630904503      36000    17525.1    12894.0      7985     779673      12799.1  cudaMemset
+      6.0        485039480      72000     6736.7     5681.0      4208     265725       6410.0  cudaEventRecord
+      5.1        418101615      36018    11608.1     9548.0      6222     968161       9611.4  cudaLaunchKernel
+      3.3        266295372         30  8876512.4   566279.5      4158  250734579   45680150.3  cudaMalloc
+      0.8         62793273         42  1495077.9  1161128.0     45406    4816190    1608484.8  cudaMemcpy
+      0.1         10402893         30   346763.1   370567.0      6923     543522     134943.0  cudaFree
+      0.1          9999200      36018      277.6      260.0        90     474112       2603.4  cuKernelGetName
+      0.0          3990502         18   221694.6   204424.0    107044     329367      72933.4  cudaDeviceSynchronize
+      0.0           912496          1   912496.0   912496.0    912496     912496          0.0  cuLibraryLoadData
+      0.0           759273         36    21090.9     2294.5       591     676797     112419.0  cudaEventCreate
+      0.0            14500         18      805.6      611.0       451       1984        499.4  cudaGetDeviceProperties_v12000
+      0.0             5339          3     1779.7     2154.0       841       2344        818.4  cuLibraryGetKernel
+      0.0             4058          1     4058.0     4058.0      4058       4058          0.0  cuModuleGetLoadingMode
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)                                              Name
+ --------  ---------------  ---------  --------  --------  --------  --------  -----------  --------------------------------------------------------------------------------------------
+     53.4       2803266872      12006  233488.8  233128.0    201672    300459      14325.7  void rmsnorm_forward_kernel8<float>(T1 *, float *, const T1 *, const T1 *, int, int)
+     23.3       1222274483      12006  101805.3  100772.0     87395    136933       6601.0  void rmsnorm_forward_kernel8<__nv_bfloat16>(T1 *, float *, const T1 *, const T1 *, int, int)
+     23.3       1221838729      12006  101769.0  100772.0     87491    136933       6693.3  void rmsnorm_forward_kernel8<__half>(T1 *, float *, const T1 *, const T1 *, int, int)
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_time_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)   Med (ns)  Min (ns)  Max (ns)  StdDev (ns)           Operation
+ --------  ---------------  -----  ---------  --------  --------  --------  -----------  ----------------------------
+     87.6        391116617  36000    10864.4   10593.0      5824     15392        881.2  [CUDA memset]
+     10.7         47676289     36  1324341.4  969075.5      5856   4195643    1508799.9  [CUDA memcpy Device-to-Host]
+      1.7          7681404      6  1280234.0  956883.5       864   3829390    1564429.7  [CUDA memcpy Host-to-Device]
+
+Processing [.nsys-rep.sqlite] with [/opt/nvidia/nsight-systems/2025.6.3/host-linux-x64/reports/cuda_gpu_mem_size_sum.py]...
+
+ ** CUDA GPU MemOps Summary (by Size) (cuda_gpu_mem_size_sum):
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)           Operation
+ ----------  -----  --------  --------  --------  --------  -----------  ----------------------------
+ 113246.208  36000     3.146     3.146     3.146     3.146        0.000  [CUDA memset]
+    302.580     36     8.405     6.308     0.033    25.166        9.497  [CUDA memcpy Device-to-Host]
+     50.338      6     8.390     6.293     0.002    25.166       10.273  [CUDA memcpy Host-to-Device]

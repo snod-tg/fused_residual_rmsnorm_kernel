@@ -125,7 +125,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel2(
 ){
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row >= N) return;
@@ -143,7 +143,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel2(
 
     for(int off = 16; off > 0; off >>= 1)
         sum += __shfl_xor_sync(0xffffffff, sum, off);
- 
+
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
@@ -168,7 +168,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel3(
 ){
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row >= N) return;
@@ -191,7 +191,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel3(
 
     for(int off = 16; off > 0; off >>= 1)
         sum += __shfl_xor_sync(0xffffffff, sum, off);
- 
+
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
@@ -220,7 +220,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel4(
 ){
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row >= N) return;
@@ -240,15 +240,15 @@ __global__ void fused_residual_rmsnorm_forward_kernel4(
         value.z = xv.z + residualv.z;
         value.w = xv.w + residualv.w;
         *reinterpret_cast<float4*>(zr + c) = value;
-        sum += value.x * value.x + 
-               value.y * value.y + 
-               value.z * value.z + 
+        sum += value.x * value.x +
+               value.y * value.y +
+               value.z * value.z +
                value.w * value.w;
     }
 
     for(int off = 16; off > 0; off >>= 1)
         sum += __shfl_xor_sync(0xffffffff, sum, off);
- 
+
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
@@ -288,7 +288,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel5(
 
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row >= N) return;
@@ -306,7 +306,7 @@ __global__ void fused_residual_rmsnorm_forward_kernel5(
 
     for(int off = 16; off > 0; off >>= 1)
         sum += __shfl_xor_sync(0xffffffff, sum, off);
- 
+
 
     float m2 = sum / C;
     if(lane == 0) mean2[row] = m2;
@@ -320,13 +320,13 @@ __global__ void fused_residual_rmsnorm_forward_kernel5(
 
 // Grid-Stride + 尾部处理 + __ldg
 __global__ void fused_residual_rmsnorm_forward_kernel6(
-    float* __restrict__ y, 
+    float* __restrict__ y,
     float* __restrict__ z,
     float* __restrict__ mean2,
-    const float* __restrict__ x, 
+    const float* __restrict__ x,
     const float* __restrict__ residual,
     const float* __restrict__ w,
-    int N, 
+    int N,
     int C
 ){
     extern __shared__ float shared_w[];  // 缓存 w
@@ -472,6 +472,181 @@ __global__ void fused_residual_rmsnorm_forward_kernel8(
     }
 }
 
+// kernel9：针对当前 C=768 的三种存储精度分别专用化。每个 warp 负责一行，
+// 将 z=x+residual 缓存在寄存器中；归约后直接写 y，避免 kernel8 再从全局内存读取 z。
+__global__ void fused_residual_rmsnorm_forward_kernel9_fp32(
+    float* __restrict__ y, float* __restrict__ z, float* __restrict__ mean2,
+    const float* __restrict__ x, const float* __restrict__ residual,
+    const float* __restrict__ w, int N
+){
+    constexpr int C = 768;
+    constexpr int V = 4;
+    constexpr int ITERS = C / (32 * V);
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int row = blockIdx.x * (blockDim.x >> 5) + warp;
+    if (row >= N) return;
+
+    const float* xr = x + (size_t)row * C;
+    const float* rr = residual + (size_t)row * C;
+    float* yr = y + (size_t)row * C;
+    float* zr = z + (size_t)row * C;
+    float4 cached_z[ITERS];
+    float sum = 0.0f;
+
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const float4 xv = *reinterpret_cast<const float4*>(xr + c);
+        const float4 rv = *reinterpret_cast<const float4*>(rr + c);
+        float4 zv;
+        zv.x = xv.x + rv.x;
+        zv.y = xv.y + rv.y;
+        zv.z = xv.z + rv.z;
+        zv.w = xv.w + rv.w;
+        cached_z[i] = zv;
+        *reinterpret_cast<float4*>(zr + c) = zv;
+        sum = fmaf(zv.x, zv.x, sum);
+        sum = fmaf(zv.y, zv.y, sum);
+        sum = fmaf(zv.z, zv.z, sum);
+        sum = fmaf(zv.w, zv.w, sum);
+    }
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+
+    const float m2 = sum / C;
+    const float inv = rsqrtf(m2 + kEps);
+    if (lane == 0) mean2[row] = m2;
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const float4 zv = cached_z[i];
+        const float4 wv = *reinterpret_cast<const float4*>(w + c);
+        float4 out;
+        out.x = zv.x * wv.x * inv;
+        out.y = zv.y * wv.y * inv;
+        out.z = zv.z * wv.z * inv;
+        out.w = zv.w * wv.w * inv;
+        *reinterpret_cast<float4*>(yr + c) = out;
+    }
+}
+
+__global__ void fused_residual_rmsnorm_forward_kernel9_fp16(
+    half* __restrict__ y, half* __restrict__ z, float* __restrict__ mean2,
+    const half* __restrict__ x, const half* __restrict__ residual,
+    const half* __restrict__ w, int N
+){
+    constexpr int C = 768;
+    constexpr int V = 4;
+    constexpr int ITERS = C / (32 * V);
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int row = blockIdx.x * (blockDim.x >> 5) + warp;
+    if (row >= N) return;
+
+    const half* xr = x + (size_t)row * C;
+    const half* rr = residual + (size_t)row * C;
+    half* yr = y + (size_t)row * C;
+    half* zr = z + (size_t)row * C;
+    half2 cached_lo[ITERS], cached_hi[ITERS];
+    float sum = 0.0f;
+
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const half2 z0 = __hadd2(*reinterpret_cast<const half2*>(xr + c),
+                                 *reinterpret_cast<const half2*>(rr + c));
+        const half2 z1 = __hadd2(*reinterpret_cast<const half2*>(xr + c + 2),
+                                 *reinterpret_cast<const half2*>(rr + c + 2));
+        cached_lo[i] = z0;
+        cached_hi[i] = z1;
+        *reinterpret_cast<half2*>(zr + c) = z0;
+        *reinterpret_cast<half2*>(zr + c + 2) = z1;
+        const float2 f0 = __half22float2(z0);
+        const float2 f1 = __half22float2(z1);
+        sum = fmaf(f0.x, f0.x, sum);
+        sum = fmaf(f0.y, f0.y, sum);
+        sum = fmaf(f1.x, f1.x, sum);
+        sum = fmaf(f1.y, f1.y, sum);
+    }
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+
+    const float m2 = sum / C;
+    const float inv = rsqrtf(m2 + kEps);
+    if (lane == 0) mean2[row] = m2;
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const float2 z0 = __half22float2(cached_lo[i]);
+        const float2 z1 = __half22float2(cached_hi[i]);
+        const float2 w0 = __half22float2(*reinterpret_cast<const half2*>(w + c));
+        const float2 w1 = __half22float2(*reinterpret_cast<const half2*>(w + c + 2));
+        *reinterpret_cast<half2*>(yr + c) = __floats2half2_rn(z0.x * w0.x * inv, z0.y * w0.y * inv);
+        *reinterpret_cast<half2*>(yr + c + 2) = __floats2half2_rn(z1.x * w1.x * inv, z1.y * w1.y * inv);
+    }
+}
+
+__global__ void fused_residual_rmsnorm_forward_kernel9_bf16(
+    __nv_bfloat16* __restrict__ y, __nv_bfloat16* __restrict__ z,
+    float* __restrict__ mean2, const __nv_bfloat16* __restrict__ x,
+    const __nv_bfloat16* __restrict__ residual, const __nv_bfloat16* __restrict__ w,
+    int N
+){
+    constexpr int C = 768;
+    constexpr int V = 4;
+    constexpr int ITERS = C / (32 * V);
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int row = blockIdx.x * (blockDim.x >> 5) + warp;
+    if (row >= N) return;
+
+    const __nv_bfloat16* xr = x + (size_t)row * C;
+    const __nv_bfloat16* rr = residual + (size_t)row * C;
+    __nv_bfloat16* yr = y + (size_t)row * C;
+    __nv_bfloat16* zr = z + (size_t)row * C;
+    __nv_bfloat162 cached_lo[ITERS], cached_hi[ITERS];
+    float sum = 0.0f;
+
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const __nv_bfloat162 z0 = __hadd2(*reinterpret_cast<const __nv_bfloat162*>(xr + c),
+                                          *reinterpret_cast<const __nv_bfloat162*>(rr + c));
+        const __nv_bfloat162 z1 = __hadd2(*reinterpret_cast<const __nv_bfloat162*>(xr + c + 2),
+                                          *reinterpret_cast<const __nv_bfloat162*>(rr + c + 2));
+        cached_lo[i] = z0;
+        cached_hi[i] = z1;
+        *reinterpret_cast<__nv_bfloat162*>(zr + c) = z0;
+        *reinterpret_cast<__nv_bfloat162*>(zr + c + 2) = z1;
+        const float2 f0 = __bfloat1622float2(z0);
+        const float2 f1 = __bfloat1622float2(z1);
+        sum = fmaf(f0.x, f0.x, sum);
+        sum = fmaf(f0.y, f0.y, sum);
+        sum = fmaf(f1.x, f1.x, sum);
+        sum = fmaf(f1.y, f1.y, sum);
+    }
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1)
+        sum += __shfl_xor_sync(0xffffffff, sum, off);
+
+    const float m2 = sum / C;
+    const float inv = rsqrtf(m2 + kEps);
+    if (lane == 0) mean2[row] = m2;
+    #pragma unroll
+    for (int i = 0; i < ITERS; ++i) {
+        const int c = (i * 32 + lane) * V;
+        const float2 z0 = __bfloat1622float2(cached_lo[i]);
+        const float2 z1 = __bfloat1622float2(cached_hi[i]);
+        const float2 w0 = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(w + c));
+        const float2 w1 = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(w + c + 2));
+        *reinterpret_cast<__nv_bfloat162*>(yr + c) = __floats2bfloat162_rn(z0.x * w0.x * inv, z0.y * w0.y * inv);
+        *reinterpret_cast<__nv_bfloat162*>(yr + c + 2) = __floats2bfloat162_rn(z1.x * w1.x * inv, z1.y * w1.y * inv);
+    }
+}
+
 
 // ----------------------------------------------------------------------------
 // kernel launch
@@ -484,7 +659,7 @@ void fused_residual_rmsnorm_forward1(
     const float* residual,
     const float* w,
     int B,
-    int T1, 
+    int T1,
     int C,
     const int block_size
 ){
@@ -502,7 +677,7 @@ void fused_residual_rmsnorm_forward2(
     const float* residual,
     const float* w,
     int B,
-    int T1, 
+    int T1,
     int C,
     const int block_size
 ){
@@ -522,7 +697,7 @@ void fused_residual_rmsnorm_forward3(
     const float* residual,
     const float* w,
     int B,
-    int T1, 
+    int T1,
     int C,
     const int block_size
 ){
@@ -551,7 +726,7 @@ void fused_residual_rmsnorm_forward4(
     const float* residual,
     const float* w,
     int B,
-    int T1, 
+    int T1,
     int C,
     const int block_size
 ){
@@ -581,7 +756,7 @@ void fused_residual_rmsnorm_forward5(
     const float* residual,
     const float* w,
     int B,
-    int T1, 
+    int T1,
     int C,
     const int block_size
 ){
@@ -599,14 +774,14 @@ void fused_residual_rmsnorm_forward5(
 }
 
 void fused_residual_rmsnorm_forward6(
-    float* y, 
+    float* y,
     float* z,
     float* mean2,
-    const float* x, 
+    const float* x,
     const float* residual,
     const float* w,
-    int B, 
-    int T1, 
+    int B,
+    int T1,
     int C,
     int block_size
 ){
@@ -668,6 +843,53 @@ void fused_residual_rmsnorm_forward8(
     CUDA_CHECK(cudaGetLastError());
 }
 
+void fused_residual_rmsnorm_forward9(
+    float* y, float* z, float* mean2, const float* x, const float* residual,
+    const float* w, int B, int T1, int C, const int block_size
+){
+    if (C != 768) {
+        fused_residual_rmsnorm_forward8<float>(y, z, mean2, x, residual, w, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+    fused_residual_rmsnorm_forward_kernel9_fp32<<<grid_size, block_size>>>(
+        y, z, mean2, x, residual, w, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void fused_residual_rmsnorm_forward9(
+    half* y, half* z, float* mean2, const half* x, const half* residual,
+    const half* w, int B, int T1, int C, const int block_size
+){
+    if (C != 768) {
+        fused_residual_rmsnorm_forward8<half>(y, z, mean2, x, residual, w, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+    fused_residual_rmsnorm_forward_kernel9_fp16<<<grid_size, block_size>>>(
+        y, z, mean2, x, residual, w, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void fused_residual_rmsnorm_forward9(
+    __nv_bfloat16* y, __nv_bfloat16* z, float* mean2,
+    const __nv_bfloat16* x, const __nv_bfloat16* residual,
+    const __nv_bfloat16* w, int B, int T1, int C, const int block_size
+){
+    if (C != 768) {
+        fused_residual_rmsnorm_forward8<__nv_bfloat16>(
+            y, z, mean2, x, residual, w, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int grid_size = ceil_div(N * 32, block_size);
+    fused_residual_rmsnorm_forward_kernel9_bf16<<<grid_size, block_size>>>(
+        y, z, mean2, x, residual, w, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 template <typename T>
 void fused_residual_rmsnorm_forward(
     int kernel_num,
@@ -692,6 +914,7 @@ void fused_residual_rmsnorm_forward(
             case 6: fused_residual_rmsnorm_forward6(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 9: fused_residual_rmsnorm_forward9(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
@@ -700,6 +923,7 @@ void fused_residual_rmsnorm_forward(
         switch(kernel_num){
             case 7: fused_residual_rmsnorm_forward7<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             case 8: fused_residual_rmsnorm_forward8<T>(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
+            case 9: fused_residual_rmsnorm_forward9(y, z, mean2, x, residual, w, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);
@@ -813,14 +1037,14 @@ int main(int argc, char **argv){
     if (kernel_num >= 1 && kernel_num <= 6) {
         return run_benchmark<float>("fp32", kernel_num, 3e-4f);
     }
-    // kernel 7(标量) / 8(vec2) 是混合精度版
-    if (kernel_num == 7 || kernel_num == 8) {
+    // kernel 7(标量) / 8(vec2) / 9(三种精度独立专用化) 是混合精度版
+    if (kernel_num == 7 || kernel_num == 8 || kernel_num == 9) {
         int fails = 0;
         fails += run_benchmark<float>("fp32", kernel_num, 3e-4f);
         fails += run_benchmark<half>("fp16", kernel_num, 5e-3f);
         fails += run_benchmark<__nv_bfloat16>("bf16", kernel_num, 4e-2f);
         return fails ? 1 : 0;
     }
-    std::printf("Invalid kernel number (1~8).\n");
+    std::printf("Invalid kernel number (1~9).\n");
     return 1;
 }

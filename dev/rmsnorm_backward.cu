@@ -49,8 +49,8 @@ void rmsnorm_forward_cpu(
     float* mean2,
     const T* x,
     const T* w,
-    int N, 
-    int C 
+    int N,
+    int C
 ){
     for(int row = 0; row < N; ++row){
         const T* xr = x + (size_t)row * C;
@@ -147,7 +147,7 @@ __global__ void rmsnorm_backward_kernel1(
     int N,
     int C
 ){
-    
+
     int row = blockIdx.x * blockDim.x + threadIdx.x;
 
     if(row >= N) return;
@@ -161,7 +161,7 @@ __global__ void rmsnorm_backward_kernel1(
     for(int c = 0; c < C; ++c){
         sum += dyr[c] * xr[c] * weight[c];
     }
- 
+
     float inv = rsqrtf(mean2[row] + kEps);
     float correction = sum * inv * inv / C;
 
@@ -184,7 +184,7 @@ __global__ void rmsnorm_backward_kernel2(
 ){
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row >= N) return;
@@ -232,7 +232,7 @@ __global__ void rmsnorm_backward_kernel3(
 
     int lane = threadIdx.x % 32;
     int warp_id = threadIdx.x / 32;
-    
+
     int row = blockIdx.x * (blockDim.x / 32) + warp_id;
 
     if(row < N){
@@ -388,8 +388,14 @@ template <> struct vec2_of<__nv_bfloat16> { using type = __nv_bfloat162; };
 // 混合精度：block 内共享内存聚合（对标 FP32 kernel3）
 template <typename T>
 __global__ void rmsnorm_backward_kernel6(
-    T* dx, float* dw, const T* dy, const T* x, const T* weight,
-    const float* mean2, int N, int C
+    T* dx,
+    float* dw,
+    const T* dy,
+    const T* x,
+    const T* weight,
+    const float* mean2,
+    int N,
+    int C
 ){
     extern __shared__ float shared_dw[];
     for(int c = threadIdx.x; c < C; c+= blockDim.x) shared_dw[c] = 0.0f;
@@ -430,8 +436,14 @@ __global__ void rmsnorm_backward_kernel6(
 // 混合精度：persistent + vec2（对标 FP32 kernel5）
 template <typename T>
 __global__ void rmsnorm_backward_kernel7(
-    T* dx, float* dw, const T* dy, const T* x, const T* w,
-    const float* mean2, int N, int C
+    T* dx,
+    float* dw,
+    const T* dy,
+    const T* x,
+    const T* w,
+    const float* mean2,
+    int N,
+    int C
 ){
     extern __shared__ float shared_dw[];
     for(int c = threadIdx.x; c < C; c+= blockDim.x) shared_dw[c] = 0.0f;
@@ -479,19 +491,204 @@ __global__ void rmsnorm_backward_kernel7(
         atomicAdd(&dw[c], shared_dw[c]);
 }
 
+// kernel8：C=768 专用的寄存器 dw 分层归约。每个 warp 在寄存器中累计自己负责的
+// 24 个通道，block 结束时才写共享内存并做一次跨 warp 归并，消除逐行 shared atomic。
+// 三种存储精度分别实现，不使用模板。
+__global__ void rmsnorm_backward_kernel8_fp32(
+    float* __restrict__ dx,
+    float* dw,
+    const float* __restrict__ dy,
+    const float* __restrict__ x,
+    const float* __restrict__ w,
+    const float* __restrict__ mean2,
+    int N
+){
+    constexpr int C = 768;
+    constexpr int ITEMS = C / 32;
+    extern __shared__ float warp_dw[];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int warps = blockDim.x >> 5;
+    const int first_row = blockIdx.x * warps + warp;
+    const int row_stride = gridDim.x * warps;
+    float acc[ITEMS];
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i) acc[i] = 0.0f;
+
+    for (int row = first_row; row < N; row += row_stride) {
+        const float* xr = x + (size_t)row * C;
+        const float* dyr = dy + (size_t)row * C;
+        float* dxr = dx + (size_t)row * C;
+        float dot = 0.0f;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            dot = fmaf(dyr[c] * xr[c], w[c], dot);
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1)
+            dot += __shfl_xor_sync(0xffffffff, dot, off);
+        const float inv = rsqrtf(mean2[row] + kEps);
+        const float correction = dot * inv * inv / C;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            const float grad = dyr[c];
+            const float value = xr[c];
+            dxr[c] = (grad * w[c] - value * correction) * inv;
+            acc[i] = fmaf(grad * value, inv, acc[i]);
+        }
+    }
+
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i)
+        warp_dw[warp * C + i * 32 + lane] = acc[i];
+    __syncthreads();
+    for (int c = threadIdx.x; c < C; c += blockDim.x) {
+        float total = 0.0f;
+        #pragma unroll
+        for (int wid = 0; wid < 32; ++wid) {
+            if (wid < warps) total += warp_dw[wid * C + c];
+        }
+        atomicAdd(dw + c, total);
+    }
+}
+
+__global__ void rmsnorm_backward_kernel8_fp16(
+    half* __restrict__ dx,
+    float* dw,
+    const half* __restrict__ dy,
+    const half* __restrict__ x,
+    const half* __restrict__ w,
+    const float* __restrict__ mean2,
+    int N
+){
+    constexpr int C = 768;
+    constexpr int ITEMS = C / 32;
+    extern __shared__ float warp_dw[];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int warps = blockDim.x >> 5;
+    const int first_row = blockIdx.x * warps + warp;
+    const int row_stride = gridDim.x * warps;
+    float acc[ITEMS];
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i) acc[i] = 0.0f;
+
+    for (int row = first_row; row < N; row += row_stride) {
+        const half* xr = x + (size_t)row * C;
+        const half* dyr = dy + (size_t)row * C;
+        half* dxr = dx + (size_t)row * C;
+        float dot = 0.0f;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            dot = fmaf(__half2float(dyr[c]) * __half2float(xr[c]), __half2float(w[c]), dot);
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1)
+            dot += __shfl_xor_sync(0xffffffff, dot, off);
+        const float inv = rsqrtf(mean2[row] + kEps);
+        const float correction = dot * inv * inv / C;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            const float grad = __half2float(dyr[c]);
+            const float value = __half2float(xr[c]);
+            dxr[c] = __float2half_rn((grad * __half2float(w[c]) - value * correction) * inv);
+            acc[i] = fmaf(grad * value, inv, acc[i]);
+        }
+    }
+
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i)
+        warp_dw[warp * C + i * 32 + lane] = acc[i];
+    __syncthreads();
+    for (int c = threadIdx.x; c < C; c += blockDim.x) {
+        float total = 0.0f;
+        #pragma unroll
+        for (int wid = 0; wid < 32; ++wid) {
+            if (wid < warps) total += warp_dw[wid * C + c];
+        }
+        atomicAdd(dw + c, total);
+    }
+}
+
+__global__ void rmsnorm_backward_kernel8_bf16(
+    __nv_bfloat16* __restrict__ dx,
+    float* dw,
+    const __nv_bfloat16* __restrict__ dy,
+    const __nv_bfloat16* __restrict__ x,
+    const __nv_bfloat16* __restrict__ w,
+    const float* __restrict__ mean2,
+    int N
+){
+    constexpr int C = 768;
+    constexpr int ITEMS = C / 32;
+    extern __shared__ float warp_dw[];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const int warps = blockDim.x >> 5;
+    const int first_row = blockIdx.x * warps + warp;
+    const int row_stride = gridDim.x * warps;
+    float acc[ITEMS];
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i) acc[i] = 0.0f;
+
+    for (int row = first_row; row < N; row += row_stride) {
+        const __nv_bfloat16* xr = x + (size_t)row * C;
+        const __nv_bfloat16* dyr = dy + (size_t)row * C;
+        __nv_bfloat16* dxr = dx + (size_t)row * C;
+        float dot = 0.0f;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            dot = fmaf(__bfloat162float(dyr[c]) * __bfloat162float(xr[c]),
+                       __bfloat162float(w[c]), dot);
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1)
+            dot += __shfl_xor_sync(0xffffffff, dot, off);
+        const float inv = rsqrtf(mean2[row] + kEps);
+        const float correction = dot * inv * inv / C;
+        #pragma unroll
+        for (int i = 0; i < ITEMS; ++i) {
+            const int c = i * 32 + lane;
+            const float grad = __bfloat162float(dyr[c]);
+            const float value = __bfloat162float(xr[c]);
+            dxr[c] = __float2bfloat16_rn(
+                (grad * __bfloat162float(w[c]) - value * correction) * inv);
+            acc[i] = fmaf(grad * value, inv, acc[i]);
+        }
+    }
+
+    #pragma unroll
+    for (int i = 0; i < ITEMS; ++i)
+        warp_dw[warp * C + i * 32 + lane] = acc[i];
+    __syncthreads();
+    for (int c = threadIdx.x; c < C; c += blockDim.x) {
+        float total = 0.0f;
+        #pragma unroll
+        for (int wid = 0; wid < 32; ++wid) {
+            if (wid < warps) total += warp_dw[wid * C + c];
+        }
+        atomicAdd(dw + c, total);
+    }
+}
+
 // ----------------------------------------------------------------------------
 // kernel launchers
 
 void rmsnorm_backward1(
-    float* dx, 
-    float* dw, 
-    const float* dy, 
-    const float* x, 
-    const float* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     const int N = B * T1;
@@ -501,15 +698,15 @@ void rmsnorm_backward1(
 }
 
 void rmsnorm_backward2(
-    float* dx, 
-    float* dw, 
-    const float* dy, 
-    const float* x, 
-    const float* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
@@ -520,15 +717,15 @@ void rmsnorm_backward2(
 }
 
 void rmsnorm_backward3(
-    float* dx, 
-    float* dw, 
-    const float* dy, 
-    const float* x, 
-    const float* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
@@ -544,15 +741,15 @@ void rmsnorm_backward3(
 }
 
 void rmsnorm_backward4(
-    float* dx, 
-    float* dw, 
-    const float* dy, 
-    const float* x, 
-    const float* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
@@ -580,15 +777,15 @@ void rmsnorm_backward4(
 }
 
 void rmsnorm_backward5(
-    float* dx, 
-    float* dw, 
-    const float* dy, 
-    const float* x, 
-    const float* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     assert(block_size % 32 == 0);
@@ -625,8 +822,16 @@ void rmsnorm_backward5(
 // 混合精度 launcher：kernel6 = warp + shared 聚合
 template <typename T>
 void rmsnorm_backward6(
-    T* dx, float* dw, const T* dy, const T* x, const T* w, const float* mean2,
-    int B, int T1, int C, const int block_size
+    T* dx,
+    float* dw,
+    const T* dy,
+    const T* x,
+    const T* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
+    const int block_size
 ){
     assert(block_size % 32 == 0);
     const int N = B * T1;
@@ -641,8 +846,16 @@ void rmsnorm_backward6(
 // 混合精度 launcher：kernel7 = persistent + vec2
 template <typename T>
 void rmsnorm_backward7(
-    T* dx, float* dw, const T* dy, const T* x, const T* w, const float* mean2,
-    int B, int T1, int C, const int block_size
+    T* dx,
+    float* dw,
+    const T* dy,
+    const T* x,
+    const T* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
+    const int block_size
 ){
     assert(block_size % 32 == 0);
     const int N = B * T1;
@@ -672,18 +885,141 @@ void rmsnorm_backward7(
     CUDA_CHECK(cudaGetLastError());
 }
 
+void rmsnorm_backward8(
+    float* dx,
+    float* dw,
+    const float* dy,
+    const float* x,
+    const float* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
+    const int block_size
+){
+    if (C != 768) {
+        rmsnorm_backward6<float>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int warps = block_size / 32;
+    const size_t smem_size = (size_t)warps * C * sizeof(float);
+    int device, max_smem;
+    CUDA_CHECK(cudaGetDevice(&device));
+    CUDA_CHECK(cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlockOptin, device));
+    if (smem_size > (size_t)max_smem) {
+        rmsnorm_backward6<float>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    CUDA_CHECK(cudaFuncSetAttribute(rmsnorm_backward_kernel8_fp32,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+    int sm_count, active;
+    CUDA_CHECK(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &active, rmsnorm_backward_kernel8_fp32, block_size, smem_size));
+    if (active == 0) {
+        rmsnorm_backward6<float>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int grid_size = std::min(sm_count * active, ceil_div(N, warps));
+    rmsnorm_backward_kernel8_fp32<<<grid_size, block_size, smem_size>>>(dx, dw, dy, x, w, mean2, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void rmsnorm_backward8(
+    half* dx,
+    float* dw,
+    const half* dy,
+    const half* x,
+    const half* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
+    const int block_size
+){
+    if (C != 768) {
+        rmsnorm_backward6<half>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int warps = block_size / 32;
+    const size_t smem_size = (size_t)warps * C * sizeof(float);
+    int device, max_smem;
+    CUDA_CHECK(cudaGetDevice(&device));
+    CUDA_CHECK(cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlockOptin, device));
+    if (smem_size > (size_t)max_smem) {
+        rmsnorm_backward6<half>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    CUDA_CHECK(cudaFuncSetAttribute(rmsnorm_backward_kernel8_fp16,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+    int sm_count, active;
+    CUDA_CHECK(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &active, rmsnorm_backward_kernel8_fp16, block_size, smem_size));
+    if (active == 0) {
+        rmsnorm_backward6<half>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int grid_size = std::min(sm_count * active, ceil_div(N, warps));
+    rmsnorm_backward_kernel8_fp16<<<grid_size, block_size, smem_size>>>(dx, dw, dy, x, w, mean2, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void rmsnorm_backward8(
+    __nv_bfloat16* dx,
+    float* dw,
+    const __nv_bfloat16* dy,
+    const __nv_bfloat16* x,
+    const __nv_bfloat16* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
+    const int block_size
+){
+    if (C != 768) {
+        rmsnorm_backward6<__nv_bfloat16>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int N = B * T1;
+    const int warps = block_size / 32;
+    const size_t smem_size = (size_t)warps * C * sizeof(float);
+    int device, max_smem;
+    CUDA_CHECK(cudaGetDevice(&device));
+    CUDA_CHECK(cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlockOptin, device));
+    if (smem_size > (size_t)max_smem) {
+        rmsnorm_backward6<__nv_bfloat16>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    CUDA_CHECK(cudaFuncSetAttribute(rmsnorm_backward_kernel8_bf16,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+    int sm_count, active;
+    CUDA_CHECK(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &active, rmsnorm_backward_kernel8_bf16, block_size, smem_size));
+    if (active == 0) {
+        rmsnorm_backward6<__nv_bfloat16>(dx, dw, dy, x, w, mean2, B, T1, C, block_size);
+        return;
+    }
+    const int grid_size = std::min(sm_count * active, ceil_div(N, warps));
+    rmsnorm_backward_kernel8_bf16<<<grid_size, block_size, smem_size>>>(dx, dw, dy, x, w, mean2, N);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 template <typename T>
 void rmsnorm_backward(
     int kernel_num,
-    T* dx, 
-    float* dw, 
-    const T* dy, 
-    const T* x, 
-    const T* w, 
-    const float* mean2, 
-    int B, 
-    int T1, 
-    int C, 
+    T* dx,
+    float* dw,
+    const T* dy,
+    const T* x,
+    const T* w,
+    const float* mean2,
+    int B,
+    int T1,
+    int C,
     const int block_size
 ){
     if constexpr (std::is_same_v<T, float>) {
@@ -695,6 +1031,7 @@ void rmsnorm_backward(
             case 5: rmsnorm_backward5(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 8: rmsnorm_backward8(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("Invalid kernel number.\n");
                 exit(1);
@@ -703,6 +1040,7 @@ void rmsnorm_backward(
         switch(kernel_num){
             case 6: rmsnorm_backward6<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             case 7: rmsnorm_backward7<T>(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
+            case 8: rmsnorm_backward8(dx, dw, dy, x, w, mean2, B, T1, C, block_size); break;
             default:
                 std::printf("kernel %d only supports fp32 (T=float).\n", kernel_num);
                 exit(1);
@@ -817,14 +1155,14 @@ int main(int argc, char **argv){
     if (kernel_num >= 1 && kernel_num <= 5) {
         return run_benchmark<float>("fp32", kernel_num, 1e-3f);
     }
-    // kernel 6(shared聚合) / 7(persistent+vec2) 是混合精度版
-    if (kernel_num == 6 || kernel_num == 7) {
+    // kernel 6(shared聚合) / 7(persistent+vec2) / 8(三种精度独立专用化)
+    if (kernel_num == 6 || kernel_num == 7 || kernel_num == 8) {
         int fails = 0;
         fails += run_benchmark<float>("fp32", kernel_num, 1e-3f);
         fails += run_benchmark<half>("fp16", kernel_num, 5e-3f);
         fails += run_benchmark<__nv_bfloat16>("bf16", kernel_num, 4e-2f);
         return fails ? 1 : 0;
     }
-    std::printf("Invalid kernel number (1~7).\n");
+    std::printf("Invalid kernel number (1~8).\n");
     return 1;
 }
