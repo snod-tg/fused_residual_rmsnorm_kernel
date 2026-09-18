@@ -170,7 +170,7 @@ def rms_norm(A, blk_m):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  测试: RMSNorm forward  (整行版 vs 分块版)
+#  测试: RMSNorm forward  (整行版 vs splitc 分块版)
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -185,10 +185,11 @@ def check(y, mean2, x, w, eps, tag=""):
         torch.testing.assert_close(mean2, ref_mean2, rtol=1e-2, atol=1e-2)
 
     suffix = "y + mean2" if mean2 is not None else "y"
-    print(f"  ✅ {tag:<28} 校验通过 ({suffix})")
+    print(f"  ✅ {tag:<26} 校验通过 ({suffix})")
 
 
 N, C, BLOCK_N, eps = 4096, 4096, 1, 1e-5
+torch.manual_seed(0)
 x = torch.randn(N, C, dtype=torch.float16, device="cuda")
 w = torch.randn(C, dtype=torch.float16, device="cuda")
 
@@ -197,32 +198,53 @@ k_full = tl_rmsnorm_forward.compile(N=N, C=C, BLOCK_N=BLOCK_N, eps=eps)
 y_full, m2_full = k_full(x, w)
 check(y_full, m2_full, x, w, eps, "整行版")
 
-# ─────────────── 2) 分块版 (扫几个 BLOCK_C) ───────────────
-BLOCK_C_LIST = (256, 512, 1024)
-kernels = {}
-for BLOCK_C in BLOCK_C_LIST:
-    assert C % BLOCK_C == 0, f"BLOCK_C={BLOCK_C} 不能整除 C={C}"
-    k = tl_rmsnorm_forward_splitc.compile(
-        N=N, C=C, BLOCK_N=BLOCK_N, BLOCK_C=BLOCK_C, eps=eps
-    )
-    y, m2 = k(x, w)
+# ─────────────── 2) splitc 分块版: 二维扫描 ───────────────
+# (BLOCK_N, BLOCK_C) 的【乘积】= 每组手心要装多少格。
+# 前 5 个组合面积都是 4096 —— 手心占用完全一样, 只是切成不同形状,
+# 所以它们的耗时差异纯粹来自"分块形状"(跟 backward 那次实验同一个设计)。
+# 后两个把面积放大一倍, 看 forward 还能不能吃下更大的块。
+SPLITC_COMBOS = (
+    (1,  4096),   # 面积 4096   ← 等价于整行版
+    (2,  2048),   # 面积 4096
+    (4,  1024),   # 面积 4096
+    (8,   512),   # 面积 4096
+    (16,  256),   # 面积 4096
+    (4,  2048),   # 面积 8192
+    (8,  1024),   # 面积 8192
+)
+split_kernels = {}
 
-    check(y, m2, x, w, eps, f"分块版 BLOCK_C={BLOCK_C}")
-    # 两个版本互相对照 (比只跟 ref 比更严格: 能发现"两边一起错"的共模问题)
+for BN, BC in SPLITC_COMBOS:
+    assert N % BN == 0, f"BLOCK_N={BN} 不能整除 N={N}"
+    assert C % BC == 0, f"BLOCK_C={BC} 不能整除 C={C}"
+    k = tl_rmsnorm_forward_splitc.compile(N=N, C=C, BLOCK_N=BN, BLOCK_C=BC, eps=eps)
+
+    y, m2 = k(x, w)
+    check(y, m2, x, w, eps, f"splitc BN={BN} BC={BC}")
+
+    # 跟整行版对照 (两个独立实现, 必须给出同一个答案)
     torch.testing.assert_close(y, y_full, rtol=1e-2, atol=1e-2)
-    kernels[BLOCK_C] = k
+
+    split_kernels[(BN, BC)] = k
 
 # ─────────────── 3) 测速 ───────────────
 print()
 t_full = do_bench(lambda: k_full(x, w), warmup=25, rep=100)
-print(f"  整行版 (BLOCK_C = C)      : {t_full:7.3f} ms")
+print(f"  整行版 (C 方向不切块)            : {t_full:7.3f} ms")
 
-for BLOCK_C in BLOCK_C_LIST:
-    t = do_bench(lambda: kernels[BLOCK_C](x, w), warmup=25, rep=100)
-    print(f"  分块版 BLOCK_C={BLOCK_C:<5}        : {t:7.3f} ms   ({t_full / t:5.2f}x vs 整行版)")
+times = {}
+for BN, BC in SPLITC_COMBOS:
+    t = do_bench(lambda: split_kernels[(BN, BC)](x, w), warmup=25, rep=100)
+    times[(BN, BC)] = t
+    print(f"  splitc BN={BN:<3} BC={BC:<5} (面积 {BN * BC:<5}): {t:7.3f} ms   ({t / t_full:5.2f}x vs 整行版)")
+
+# 汇总要跟【最快】比, 不是跟基准比 —— 否则会严重低估自己
+best = min(times, key=times.get)
+t_best = times[best]
+print(f"\n  最快: splitc BN={best[0]} BC={best[1]} = {t_best:.3f} ms  (比整行版快 {t_full / t_best:.2f}x)")
 
 t_ref = do_bench(lambda: ref_rmsnorm(x, w, eps), warmup=25, rep=100)
-print(f"  torch 参考实现            : {t_ref:7.3f} ms   (TileLang 整行版 {t_ref / t_full:5.2f}x)")
+print(f"  torch 参考实现                   : {t_ref:7.3f} ms   (TileLang 最快 {t_ref / t_best:5.2f}x)")
 
 print("\n✅ 全部通过")
 
