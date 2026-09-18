@@ -173,12 +173,6 @@ def rms_norm(A, blk_m):
 #  测试: RMSNorm forward  (整行版 vs 分块版)
 # ═══════════════════════════════════════════════════════════════
 
-def unwrap(out):
-    """兼容 kernel 返回"单个张量"或"元组 (y, mean2)"两种写法"""
-    if isinstance(out, tuple):
-        return out[0], out[1]
-    return out, None
-
 
 def check(y, mean2, x, w, eps, tag=""):
     """校验 y (以及可选的 mean2)"""
@@ -200,7 +194,7 @@ w = torch.randn(C, dtype=torch.float16, device="cuda")
 
 # ─────────────── 1) 整行版 (基准) ───────────────
 k_full = tl_rmsnorm_forward.compile(N=N, C=C, BLOCK_N=BLOCK_N, eps=eps)
-y_full, m2_full = unwrap(k_full(x, w))
+y_full, m2_full = k_full(x, w)
 check(y_full, m2_full, x, w, eps, "整行版")
 
 # ─────────────── 2) 分块版 (扫几个 BLOCK_C) ───────────────
@@ -211,7 +205,7 @@ for BLOCK_C in BLOCK_C_LIST:
     k = tl_rmsnorm_forward_splitc.compile(
         N=N, C=C, BLOCK_N=BLOCK_N, BLOCK_C=BLOCK_C, eps=eps
     )
-    y, m2 = unwrap(k(x, w))
+    y, m2 = k(x, w)
 
     check(y, m2, x, w, eps, f"分块版 BLOCK_C={BLOCK_C}")
     # 两个版本互相对照 (比只跟 ref 比更严格: 能发现"两边一起错"的共模问题)
