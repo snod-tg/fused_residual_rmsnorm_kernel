@@ -4,21 +4,19 @@
 
 ![GEMM latency](../figures/gemm.png)
 
-## 优化演进
+## 最优版kernel9
 
-kernel1 native → kernel2 cuBLAS → kernel3 shared tile → kernel4寄存器分块 → kernel5向量加载/XOR布局 → kernel6预取双池 → kernel7 cp.async → kernel8 WMMA → kernel9操作数流水线及显式ldmatrix/mma。
+FP32采用64×64×16、128线程、shared双池和register操作数双缓冲。FP16/BF16采用32×64×32、4warps，warp16×32，XOR shared布局、ldmatrix/mma.sync和成对输出写回，省去shared输出重排。
 
-kernel9 FP32采用64×64×16、128线程、shared双池和register操作数双缓冲。FP16/BF16采用32×64×32、4warps，warp16×32，XOR shared布局、ldmatrix/mma.sync和成对输出写回，省去shared输出重排。
+## 与cuBLAS同轮对比
 
-## 同轮实测
+2026-10-04，RTX 4090D物理GPU1、CUDA12.4.99；预热5次、热缓存、CUDA Event、7轮每轮200 repeats，比较顺序轮换取中位数，未锁时钟。单位μs。
 
-2026-10-04，RTX 4090D物理GPU1、CUDA12.4.99；预热5次、热缓存、CUDA Event、7轮每轮200 repeats，比较顺序轮换取中位数，未锁时钟。单位μs。上一版最佳为FP32 kernel6、FP16/BF16 kernel8。
-
-| dtype | cuBLAS | 上一版最佳 | kernel9 | 相对cuBLAS吞吐 |
-|---|---:|---:|---:|---:|
-| FP32 | 67.740 | 81.215 | 68.239 | 99.3% |
-| FP16 | 21.971 | 25.356 | 23.648 | 92.9% |
-| BF16 | 22.063 | 28.497 | 23.601 | 93.5% |
+| dtype | kernel9 | cuBLAS | 相对cuBLAS吞吐 |
+|---|---:|---:|---:|
+| FP32 | 68.239 | 67.740 | 99.3% |
+| FP16 | 23.648 | 21.971 | 92.9% |
+| BF16 | 23.601 | 22.063 | 93.5% |
 
 百分比=cuBLAS中位耗时/kernel9中位耗时×100%。这是该硬件/形状/精度口径的算子吞吐，不代表推理框架端到端性能。FP32约持平，低精度仍有约6–7%吞吐差距。
 
@@ -30,7 +28,7 @@ kernel9 FP32采用64×64×16、128线程、shared双池和register操作数双�
 
 ## 正确性与范围
 
-既有54-case测试包括小矩阵、尾块、两随机种子和零输入，全量与cuBLAS对比及CPU double抽查。kernel9另有全grid memcheck和实际输入单CTA racecheck/synccheck；不能把单CTA检查表述为全grid racecheck。kernel5~9只支持1024³，其他形状报错；回归尺寸使用早期版本。
+kernel9只支持1024³，其他形状报错。固定目标与cuBLAS对拍，并执行全grid memcheck和实际输入单CTA racecheck/synccheck；单CTA检查不代表全grid racecheck。程序另有54-case回归，覆盖小矩阵、尾块、两随机种子和零输入，全量与cuBLAS对比及CPU double抽查；通用尺寸由其他路径验证，不作为kernel9的支持范围。
 
 ```bash
 mkdir -p result/build
