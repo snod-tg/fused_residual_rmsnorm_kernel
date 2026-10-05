@@ -4,7 +4,7 @@ fused residual rmsnorm forward kernel by tilelang
 融合了什么: 把 [残差相加 z = x + residual] 塞进 RMSNorm 前向, 省掉一次显存往返。
 另外把 z 写出去存给反向 —— 反向就不用再重算 x + residual 了。
 
-对照 dev/fused_residual_rmsnorm_forward.cu 的 CPU 参考:
+对照 dev/cuda/fused_residual_rmsnorm_forward.cu 的 CPU 参考:
 
     for(int row = 0; row < N; ++row){
         for(int c = 0; c < C; ++c){

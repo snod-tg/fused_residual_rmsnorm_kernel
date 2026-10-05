@@ -1,7 +1,7 @@
 """
 fused residual rmsnorm backward kernel by tilelang
 
-对应 dev/fused_residual_rmsnorm_backward.cu 的 CPU 参考:
+对应 dev/cuda/fused_residual_rmsnorm_backward.cu 的 CPU 参考:
 
     for(int row = 0; row < N; ++row){
         float sum = 0.0f;
@@ -166,21 +166,18 @@ def tl_fused_rmsnorm_backward_splitc(dY, Z, W, mean2, dW, BLOCK_N: int, BLOCK_C:
 
 
 def ref_fused_rmsnorm_bwd(x, r, w, dy, eps=1e-5):
-    """参考实现: 用 torch autograd (独立第三方裁判, 不会跟 kernel 一起错)
+    """独立 autograd 参考，输入使用前向实际保存的 FP16 z。
 
-    前向: z = x + r; y = z * w * rsqrt(mean(z^2) + eps)
-    反向: 求 x.grad / r.grad / w.grad
+    kernel 的输入是 round_fp16(x+r)，不能与未舍入的 x+r 对拍。
+    将保存后的 z 作为 FP32 leaf 求导，dx/dresidual 共享 dz；
+    weight leaf 使用 FP32，以匹配 kernel 的 FP32 dW 输出。
     """
-    x = x.detach().clone().requires_grad_(True)
-    r = r.detach().clone().requires_grad_(True)
-    w = w.detach().clone().requires_grad_(True)
-
-    zf = x.float() + r.float()
+    zf = (x.float() + r.float()).to(x.dtype).float().detach().requires_grad_(True)
+    wf = w.float().detach().requires_grad_(True)
     mean2 = zf.pow(2).mean(dim=-1, keepdim=True)
-    y = zf * w.float() * torch.rsqrt(mean2 + eps)
+    y = zf * wf * torch.rsqrt(mean2 + eps)
     y.backward(dy.float())
-
-    return x.grad, r.grad, w.grad
+    return zf.grad.to(x.dtype), zf.grad.to(r.dtype), wf.grad
 
 
 def check(dX, dR, dW, x, r, w, dy, eps, tag=""):
