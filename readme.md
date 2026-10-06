@@ -29,7 +29,7 @@ readme.md
 | TileLang | Fused Residual RMSNorm forward | [分析](analysis/tilelang_fused_residual_rmsnorm_forward.md) |
 | TileLang | Fused Residual RMSNorm backward | [分析](analysis/tilelang_fused_residual_rmsnorm_backward.md) |
 | CUDA | GEMM，固定 1024³ | [分析](analysis/gemm.md) |
-| CUDA | MoE Grouped GEMM，固定不均匀 counts | [分析](analysis/grouped_gemm.md) |
+| CUDA | MoE Grouped GEMM，固定总 M、可变专家分配 | [分析](analysis/grouped_gemm.md) |
 
 各报告注明形状、精度、硬件、计时方法、验证范围和数据日期。3060 Laptop 的历史 RMSNorm 数据与 4090D 的 GEMM / TileLang 数据分别呈现；不同测量方法或硬件的数据不直接混算加速比。
 
@@ -49,6 +49,10 @@ nvcc -O3 -std=c++17 -arch=sm_89 dev/cuda/gemm_forward.cu -lcublas -o result/buil
 nvcc -O3 -std=c++17 -arch=sm_89 dev/cuda/moe_grouped_gemm_forward.cu -lcublas -o result/build/moe_grouped_gemm_forward
 ./result/build/moe_grouped_gemm_forward --counts 64,96,160,192,64,96,160,192,64,96,160,192,64,96,160,192 --n 1024 --k 1024 --dtype fp16 --kernel 7
 ./result/build/moe_grouped_gemm_forward --self-test --kernel 7
+
+# kernel8：总M=2048、E=16、N=K=1024，专家分配可变。
+./result/build/moe_grouped_gemm_forward --m 2048 --experts 16 --n 1024 --k 1024 --dtype fp16 --kernel 8
+./result/build/moe_grouped_gemm_forward --self-test --kernel 8
 ```
 
 CUTLASS 对照编译时追加 `--expt-relaxed-constexpr -DUSE_CUTLASS -I "$CUTLASS_ROOT/include"`；普通编译无需 CUTLASS。TileLang 示例需要可用的 TileLang/PyTorch/CUDA 环境及匹配的 C++ 工具链：

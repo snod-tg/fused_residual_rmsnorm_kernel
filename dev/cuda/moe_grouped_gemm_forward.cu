@@ -389,6 +389,20 @@ inline std::vector<GroupTile> make_fixed_tiles(const std::vector<int>& counts) {
             for(int row=0;row<counts[e]/32;++row)tiles.push_back({e,row,col});
     return tiles;
 }
+// kernel8：固定 E=16、sum(M_e)=2048、N=K=1024；每个专家的 M_e 可以为零或任意尾块。
+inline bool moe_is_kernel8_target(const std::vector<int>& counts,int n,int k) {
+    if(counts.size()!=16 || n!=1024 || k!=1024)return false;
+    int total=0;for(int m:counts)total+=m;
+    return total==2048;
+}
+inline std::vector<GroupTile> make_kernel8_tiles(const std::vector<int>& counts) {
+    std::vector<GroupTile> tiles;
+    // 保持专家/N/M 次序；向上取整覆盖尾块，M_e=0 自然不会产生任务。
+    for(int e=0;e<int(counts.size());++e)
+        for(int col=0;col<1024/128;++col)
+            for(int row=0;row<ceil_div(counts[e],32);++row)tiles.push_back({e,row,col});
+    return tiles;
+}
 // 对线性 half 地址做 XOR：BK=32 时交换物理行，省掉 PA=64 的 padding。
 // 低三位不变，16-byte cp.async 保持对齐、连续；读写使用同一个地址映射。
 template<int WIDTH>
@@ -505,6 +519,21 @@ __global__ void moe_grouped_gemm_forward_kernel7(
         b+size_t(t.expert)*1024*1024,counts[t.expert],t.row*32,t.col*128,reinterpret_cast<half*>(storage));
 }
 
+// 复用 kernel7 的固定 N/K 计算核心；其 A 加载补零和输出行屏蔽支持任意 M 尾块。
+__global__ void moe_grouped_gemm_forward_kernel8(
+    half* __restrict__ c,
+    const half* __restrict__ a,
+    const half* __restrict__ b,
+    const int* counts,
+    const int* offsets,
+    const GroupTile* tiles
+){
+    extern __shared__ __align__(16) unsigned char storage[];
+    auto t=tiles[blockIdx.x];int off=offsets[t.expert];
+    moe_fixed_tile<half,32,128,32,32,32,3>(c+size_t(off)*1024,a+size_t(off)*1024,
+        b+size_t(t.expert)*1024*1024,counts[t.expert],t.row*32,t.col*128,reinterpret_cast<half*>(storage));
+}
+
 template<class T> bool run_benchmark(
     const GemmOptions& o,
     bool zeros=false
@@ -532,7 +561,7 @@ template<class T> bool run_benchmark(
     dr.poison();blas_loop(dr.ptr);auto ref=dr.download();if(!cpu_check(ref))return false;
     printf("GROUPED dtype=%s rows=%d E=%d N=%d K=%d counts=",o.dtype.c_str(),m,experts,n,k);
     for(int e=0;e<experts;++e)printf("%s%d",e?";":"",counts[e]);puts("");
-    for(int v=1;v<=7;++v) {
+    for(int v=1;v<=8;++v) {
         if(o.kernel && o.kernel!=v)continue;
         if(v==5) {
             bool available=false;
@@ -546,8 +575,10 @@ template<class T> bool run_benchmark(
         }
         bool fixed=v==7 && std::is_same_v<T,half> && moe_is_fixed_target(counts,n,k);
         if(v==7)puts(fixed?"DISPATCH kernel7: fixed FP16 32x128x32, 3 stages":"DISPATCH kernel7: fallback to kernel6 for this dtype/shape");
-        bool wide=(v==6 || v==7) && !std::is_same_v<T,float> && moe_use_wide_tiles(counts,n,k);
-        auto ht=fixed ? make_fixed_tiles(counts) : (v==6 || v==7) ? (wide ? make_optimized_tiles<32,128,128>(counts,n,true) : make_optimized_tiles(counts,n,!std::is_same_v<T,float>)) : make_tiles(counts,n,v==3?3:4);
+        bool dynamic=v==8 && std::is_same_v<T,half> && moe_is_kernel8_target(counts,n,k);
+        if(v==8)puts(dynamic?"DISPATCH kernel8: FP16 E=16 sum(M)=2048 N=K=1024, variable counts":"DISPATCH kernel8: fallback to kernel6 for this dtype/shape");
+        bool wide=(v==6 || v==7 || v==8) && !std::is_same_v<T,float> && moe_use_wide_tiles(counts,n,k);
+        auto ht=fixed ? make_fixed_tiles(counts) : dynamic ? make_kernel8_tiles(counts) : (v==6 || v==7 || v==8) ? (wide ? make_optimized_tiles<32,128,128>(counts,n,true) : make_optimized_tiles(counts,n,!std::is_same_v<T,float>)) : make_tiles(counts,n,v==3?3:4);
         DeviceBuffer<GroupTile> dt(ht.size());dt.upload(ht);
         std::function<void()> cutlass_run;
 #ifdef USE_CUTLASS
@@ -572,7 +603,10 @@ template<class T> bool run_benchmark(
             else if(v==7 && fixed) {
                 if constexpr(std::is_same_v<T,half>)moe_grouped_gemm_forward_kernel7<<<ht.size(),128,3*(32*32+32*128)*sizeof(half)>>>(dc.ptr,da.ptr,db.ptr,dcounts.ptr,doffsets.ptr,dt.ptr);
             }
-            else if(v==6 || v==7) {
+            else if(v==8 && dynamic) {
+                if constexpr(std::is_same_v<T,half>)moe_grouped_gemm_forward_kernel8<<<ht.size(),128,3*(32*32+32*128)*sizeof(half)>>>(dc.ptr,da.ptr,db.ptr,dcounts.ptr,doffsets.ptr,dt.ptr);
+            }
+            else if(v==6 || v==7 || v==8) {
                 if constexpr(std::is_same_v<T,float>)moe_grouped_gemm_forward_kernel6_fp32<<<ht.size(),128>>>(dc.ptr,da.ptr,db.ptr,dcounts.ptr,doffsets.ptr,dt.ptr,n,k);
                 else if(wide)moe_grouped_gemm_forward_kernel6_mma<T,32,128,16,64,128><<<ht.size(),128>>>(dc.ptr,da.ptr,db.ptr,dcounts.ptr,doffsets.ptr,dt.ptr,int(ht.size()),n,k);
                 else moe_grouped_gemm_forward_kernel6_mma<T><<<ht.size(),128>>>(dc.ptr,da.ptr,db.ptr,dcounts.ptr,doffsets.ptr,dt.ptr,int(ht.size()),n,k);
@@ -616,6 +650,33 @@ template<class T> bool run_dtype(GemmOptions o) {
         o.counts="64,96,160,192,64,96,160,192,64,96,160,192,64,96,160,192";o.n=o.k=1024;
         for(int seed:{0,17}){o.seed=seed;if(!run_benchmark<T>(o))return false;}
         if(!run_benchmark<T>(o,true))return false;
+        if(o.kernel==0 || o.kernel==8) {
+            // 固定总 M 的优化路径：均匀、集中、空专家、小专家和非 32 倍数。
+            std::vector<std::vector<int>> patterns(7,std::vector<int>(16,0));
+            patterns[0].assign(16,128);
+            patterns[1][0]=2048;patterns[2][15]=2048;
+            patterns[3][0]=1;patterns[3][15]=2047;
+            patterns[4].assign(16,127);patterns[4][15]=143;
+            patterns[5]={0,1,2,7,8,15,16,17,31,32,33,63,64,65,129,0};
+            int used=0;for(int m:patterns[5])used+=m;patterns[5][15]=2048-used;
+            patterns[6][0]=1536;
+            for(int e=1;e<16;++e)patterns[6][e]=512/15+(e<=512%15);
+            // 随机切分而非只做均匀 multinomial，产生更多空专家和尾块。
+            for(int seed:{0,17,43}) {
+                std::mt19937 rng(seed);std::uniform_int_distribution<int> pick(0,2048);
+                std::vector<int> cuts={0,2048};for(int e=0;e<15;++e)cuts.push_back(pick(rng));
+                std::sort(cuts.begin(),cuts.end());std::vector<int> counts(16);
+                for(int e=0;e<16;++e)counts[e]=cuts[e+1]-cuts[e];patterns.push_back(counts);
+            }
+            o.kernel=8;
+            for(const auto& counts:patterns) {
+                std::ostringstream text;
+                for(size_t e=0;e<counts.size();++e)text<<(e?",":"")<<counts[e];
+                o.counts=text.str();
+                for(int seed:{0,17}){o.seed=seed;if(!run_benchmark<T>(o))return false;}
+            }
+            if(!run_benchmark<T>(o,true))return false;
+        }
     }
     return true;
 }
@@ -624,7 +685,7 @@ int main(
     char** argv
 ) {
     try {
-        auto o=gemm_options(argc,argv,7);gemm_device_info();bool ok=true;
+        auto o=gemm_options(argc,argv,8);gemm_device_info();bool ok=true;
         if(o.self_test) {
             o.dtype="fp32";ok &= run_dtype<float>(o);
             o.dtype="fp16";ok &= run_dtype<half>(o);
